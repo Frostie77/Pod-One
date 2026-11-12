@@ -16,3 +16,6 @@ dependencyResolutionManagement {
 
 rootProject.name = 'SWE1RacerAndroid'
 include ':app'
+
+include ':frostfrontend'
+project(':frostfrontend').projectDir = file('FrostFrontend/frostfrontend')

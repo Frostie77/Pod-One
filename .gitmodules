@@ -9,3 +9,6 @@
 [submodule "lib/SDL2"]
 	path = lib/SDL2
 	url = https://github.com/libsdl-org/SDL.git
+[submodule "android/FrostFrontend"]
+	path = android/FrostFrontend
+	url = https://github.com/Frostie77/FrostFrontend.git
