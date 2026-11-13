@@ -14,8 +14,8 @@
 - Play, Choose ROM, Settings, Save Management, Updates, Diagnostics and Quit.
 - ROM selection, byte-order conversion, SHA-1 verification and the separated `:game` process are preserved.
 - Local optional game artwork: `android/app/src/main/res/drawable-nodpi/pod_one_launcher_art.jpg`. The app uses its original vector art if absent. **Do not commit copyrighted cover artwork.**
-- Approved icon can be installed locally as `android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png`. Android adaptive and legacy icon resources already refer to that name.
-- Left menu uses dark blue with gold focus and keeps actual gameplay art outside the Android source distribution.
+- Approved icon: `android/app/src/main/res/drawable-nodpi/pod_one_approved_icon.png`. Gradle selects this full-size icon when locally installed; the public repo retains its vector fallback. Remove the previous test asset `ic_launcher_foreground.png` to prevent double padding.
+- Left menu uses navy and gold with controller focus; it occupies at most 34% of display width (306dp cap), leaving more of the original artwork visible.
 
 ### In-game FrostFrontend
 
@@ -23,12 +23,13 @@
 - Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
 - Gamepad Select/Menu opens settings. The original Start button is reserved for Racer.
+- The shared FrostFrontend test submodule now has the preview-inspired **left-hand sidebar** and **right settings panel**. Changes remain on the shared library feature branch until device testing.
 - Gamepad inputs are suppressed during the settings overlay to avoid accidentally controlling the vehicle while navigating.
 - Important: the original game's race simulation is **not yet paused** while FrostFrontend is open. Pause with Start first in the current test build.
 
 ### Graphics / RT64
 
-- Original 4:3, Expand 16:9, Expand 16:10, Expand 3:2, Expand 21:9. RT64 Manual aspect target is used, not image stretching.
+- Original 4:3, Expand 16:9, Expand 16:10, Expand 3:2, Expand 21:9, and **Expand to Screen** (dynamic RT64 viewport, without stretching). RT64 Manual aspect target is used, not image stretching.
 - 1x, 2x, 3x, Fit rendering; Sharp/Smooth scaling.
 - MSAA Off/2x/4x; downsampling Off/2x/3x; output refresh Original/Display/Manual 60.
 - Android Window Mode is fullscreen only; the menu shows the actual supported mode instead of offering a nonworking windowed toggle.
@@ -52,6 +53,11 @@
 - In-game Save Management directs the user back to launcher before importing/deleting to avoid corrupting an active save. No save states.
 - Ensure the actual save path and imported format are validated against a real save on Odin.
 
+### Graphics driver and diagnostics
+
+- **Graphics Driver Selection** opens Android Developer Options for devices supporting per-app driver selection. This is a real OS shortcut, **not** custom Turnip driver loading. Custom drivers require a separately verified loader, such as AdrenoTools, before RT64 initializes.
+- **Share Startup Log** appears in Graphics and launcher Diagnostics, sharing Android device/build information plus up to 1,000 app-readable logcat lines. Modern Android restricts logcat to the calling app's available records. Review logs before sharing.
+
 ### Updates
 
 - Queries the official `Frostie77/Pod-One` **latest GitHub release** API, with HTTP and timeout/error handling.
@@ -65,7 +71,7 @@
 3. Verify pre-game settings and in-game six-tab FrostFrontend with touch, D-pad, A/B and shoulder tab navigation.
 4. Rebind Accelerator/Brake/Z/R, restart the game, verify persistence. Confirm steering and camera sticks do not change.
 5. Move the touch menu icon; hide touch buttons; reopen settings; restart and confirm icon position persisted.
-6. Test all five aspect ratios, including 16:10 for the Odin 2 Portal, in menus and during a race. Record HUD defects.
+6. Test all six aspect ratios, including 16:10 for the Odin 2 Portal, in menus and during a race. Record HUD defects.
 7. Try MSAA Off/2x/4x, downsampling Off/2x/3x individually. Restore Off if driver fails.
 8. Compare audio delay before/after; check engine audio, announcer, long sessions and stereo speaker test.
 9. Export a valid save to a document, then import it after exiting the game. Verify progress. Test delete with a backup.
@@ -76,7 +82,7 @@
 - Actual HUD anchoring across expanded ratios; requires GPU/display-list capture and N64 overlay grouping.
 - Real pause/resume for settings overlay, rather than just suppressing inputs.
 - ROM-independent public build/release verification: needs Windows/Android SDK/ROM-included local build, **not** a GitHub public artifact containing game code.
-- The shared FrostFrontend library is still on its existing commit; this fork integrates it as a host. The six-tab standard, improvements from BlastDroid and further touch editor enhancements should be upstreamed to `Frostie77/FrostFrontend` separately without breaking earlier Android ports.
+- Pod One currently pins a redesigned shared FrostFrontend **feature branch**. Shared `main` remains unchanged until it passes regression tests against the existing Android ports. Additional BlastDroid improvements should be reviewed for compatibility before merging.
 - Verify full launcher save path and gamepad handling on the Odin 2 Portal.
 
 ## Source references
