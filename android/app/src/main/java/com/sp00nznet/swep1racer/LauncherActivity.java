@@ -302,12 +302,13 @@ public final class LauncherActivity extends Activity {
     }
 
     private void showDiagnostics() {
-        message("Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")"
-                + "\nDevice: " + Build.MANUFACTURER + " " + Build.MODEL
-                + "\nBackend: Vulkan / RT64"
-                + "\nROM: " + (rom().isFile() ? "Verified USA ROM installed" : "Not imported")
-                + "\nSave: " + (save().isFile() ? "Present" : "Not present")
-                + "\nPod One: development build");
+        new AlertDialog.Builder(this)
+                .setTitle("Pod One Diagnostics")
+                .setMessage("Share startup logs, including accessible game output and device details. Android limits logcat to app-readable records.")
+                .setPositiveButton("Share Startup Log", (d, w) -> PodOneDiagnostics.shareStartupLog(this))
+                .setNeutralButton("Driver Preferences", (d, w) -> PodOneDiagnostics.openDriverPreferences(this))
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
