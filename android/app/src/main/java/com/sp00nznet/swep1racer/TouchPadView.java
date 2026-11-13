@@ -36,6 +36,7 @@ public final class TouchPadView extends View {
     private static final float[] DEF_Y = { 0.72f, 0.84f, 0.30f, 0.14f, 0.90f, 0.26f, 0.50f, 0.38f, 0.38f, 0.70f, 0.60f };
     private static final float[] DEF_R = { 0.090f, 0.075f, 0.075f, 0.065f, 0.050f, 0.048f, 0.048f, 0.048f, 0.048f, 0.20f, 0.065f };
     static final String LAYOUT = "pad_layout";
+    static final String MENU_LAYOUT = "podone_menu_position";
 
     // BOOST (2026-10-21), one thumb. Racer charges a boost while accelerate is held (above ~half top speed), fires it
     // on a fresh accelerate press, and cancels it as soon as accelerate is let go. So BOOST:
@@ -49,7 +50,9 @@ public final class TouchPadView extends View {
     private static final long BOOST_CHARGE_MS = 1200, BOOST_GAP_MS = 80, BOOST_RETAP_MS = 400, BOOST_GRACE_MS = 250;
     private static final long BOOST_POLL_MS = 30;
 
-    private static final float TOGGLE_X = 0.50f, TOGGLE_Y = 0.06f, TOGGLE_R = 0.045f;
+    private static final float TOGGLE_R = 0.045f;
+    private static final int MENU_CONTROL = CONTROLS;
+    private float menuX = 0.50f, menuY = 0.06f, menuScale = 1.0f;
     private static final int ACCENT = 0xFF8AB4FF;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -132,6 +135,15 @@ public final class TouchPadView extends View {
     /** Loads the saved layout ("x,y,scale" per control, ';' between controls); missing or bad = default. */
     void loadLayout(SharedPreferences p) {
         prefs = p;
+        final String menu = p.getString(MENU_LAYOUT, "");
+        try {
+            String[] v = menu.split(",");
+            if (v.length == 3) {
+                menuX = clampf(Float.parseFloat(v[0]), 0.04f, 0.96f);
+                menuY = clampf(Float.parseFloat(v[1]), 0.05f, 0.95f);
+                menuScale = clampf(Float.parseFloat(v[2]), 0.65f, 1.8f);
+            }
+        } catch (NumberFormatException ignored) { }
         final String s = p.getString(LAYOUT, null);
         if (s == null) return;
         final String[] parts = s.split(";");
@@ -156,7 +168,9 @@ public final class TouchPadView extends View {
             if (i > 0) s.append(';');
             s.append(String.format(Locale.US, "%.4f,%.4f,%.3f", cx[i], cy[i], cscale[i]));
         }
-        prefs.edit().putString(LAYOUT, s.toString()).apply();
+        prefs.edit().putString(LAYOUT, s.toString())
+            .putString(MENU_LAYOUT, String.format(Locale.US, "%.4f,%.4f,%.3f",
+                    menuX, menuY, menuScale)).apply();
     }
 
     /** Editing mode on: drag controls, resize the selected one; the game gets no input meanwhile. */
@@ -212,7 +226,7 @@ public final class TouchPadView extends View {
         // Menu button: on a fresh finger down inside it
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
             float x = e.getX(actionIndex), y = e.getY(actionIndex);
-            if (inside(x, y, TOGGLE_X * w(), TOGGLE_Y * hh, TOGGLE_R * hh * 1.4f)) {
+            if (inside(x, y, menuX * w(), menuY * hh, TOGGLE_R * menuScale * hh * 1.4f)) {
                 releaseAll();
                 if (onMenu != null) {
                     onMenu.run();
@@ -321,9 +335,12 @@ public final class TouchPadView extends View {
                 // the control under the finger (the smallest one wins where controls overlap)
                 int best = -1;
                 float bestR = Float.MAX_VALUE;
-                for (int i = 0; i < CONTROLS; i++) {
-                    final float r = Math.max(pr(i), h() * 0.05f);
-                    if (inside(x, y, px(i), py(i), r) && r < bestR) {
+                for (int i = 0; i <= CONTROLS; i++) {
+                    final float r = i == MENU_CONTROL ? TOGGLE_R * menuScale * h() * 1.4f
+                            : Math.max(pr(i), h() * 0.05f);
+                    float cx = i == MENU_CONTROL ? menuX * w() : px(i);
+                    float cy = i == MENU_CONTROL ? menuY * h() : py(i);
+                    if (inside(x, y, cx, cy, r) && r < bestR) {
                         best = i;
                         bestR = r;
                     }
@@ -332,16 +349,21 @@ public final class TouchPadView extends View {
                     dragging = best;
                     selected = best;
                     dragPointer = e.getPointerId(actionIndex);
-                    dragDx = x - px(best);
-                    dragDy = y - py(best);
+                    dragDx = x - (best == MENU_CONTROL ? menuX * w() : px(best));
+                    dragDy = y - (best == MENU_CONTROL ? menuY * h() : py(best));
                     invalidate();
                 }
             }
         } else if (action == MotionEvent.ACTION_MOVE && dragging >= 0) {
             final int idx = e.findPointerIndex(dragPointer);
             if (idx >= 0) {
-                cx[dragging] = clampf((e.getX(idx) - dragDx) / w(), 0.02f, 0.98f);
-                cy[dragging] = clampf((e.getY(idx) - dragDy) / h(), 0.04f, 0.96f);
+                if (dragging == MENU_CONTROL) {
+                    menuX = clampf((e.getX(idx) - dragDx) / w(), 0.04f, 0.96f);
+                    menuY = clampf((e.getY(idx) - dragDy) / h(), 0.05f, 0.95f);
+                } else {
+                    cx[dragging] = clampf((e.getX(idx) - dragDx) / w(), 0.02f, 0.98f);
+                    cy[dragging] = clampf((e.getY(idx) - dragDy) / h(), 0.04f, 0.96f);
+                }
                 invalidate();
             }
         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
@@ -355,10 +377,12 @@ public final class TouchPadView extends View {
     private void onTool(int t) {
         switch (t) {
             case 0: // Smaller
-                if (selected >= 0) cscale[selected] = clampf(cscale[selected] / 1.12f, 0.5f, 2.0f);
+                if (selected == MENU_CONTROL) menuScale = clampf(menuScale / 1.12f, 0.65f, 1.8f);
+                else if (selected >= 0) cscale[selected] = clampf(cscale[selected] / 1.12f, 0.5f, 2.0f);
                 break;
             case 1: // Bigger
-                if (selected >= 0) cscale[selected] = clampf(cscale[selected] * 1.12f, 0.5f, 2.0f);
+                if (selected == MENU_CONTROL) menuScale = clampf(menuScale * 1.12f, 0.65f, 1.8f);
+                else if (selected >= 0) cscale[selected] = clampf(cscale[selected] * 1.12f, 0.5f, 2.0f);
                 break;
             case 2: // Reset: everything back to the default layout
                 for (int i = 0; i < CONTROLS; i++) {
@@ -366,6 +390,7 @@ public final class TouchPadView extends View {
                     cy[i] = DEF_Y[i];
                     cscale[i] = 1f;
                 }
+                menuX = 0.50f; menuY = 0.06f; menuScale = 1.0f;
                 selected = -1;
                 break;
             default: // Done
@@ -417,13 +442,13 @@ public final class TouchPadView extends View {
     @Override
     protected void onDraw(Canvas c) {
         float hh = h();
-        // menu button (hidden while editing: Done ends editing)
-        if (!editing) {
+        // Menu icon remains visible and selectable during layout editing.
+        {
             fill.setColor(0x55000000);
-            c.drawCircle(TOGGLE_X * w(), TOGGLE_Y * hh, TOGGLE_R * hh, fill);
-            c.drawCircle(TOGGLE_X * w(), TOGGLE_Y * hh, TOGGLE_R * hh, stroke);
+            c.drawCircle(menuX * w(), menuY * hh, TOGGLE_R * menuScale * hh, fill);
+            c.drawCircle(menuX * w(), menuY * hh, TOGGLE_R * menuScale * hh, stroke);
             text.setTextSize(hh * 0.05f);
-            c.drawText("≡", TOGGLE_X * w(), TOGGLE_Y * hh + hh * 0.017f, text);
+            c.drawText("≡", menuX * w(), menuY * hh + hh * 0.017f, text);
         }
         text.setTextSize(hh * 0.035f);
         if (!visible && !editing) {
@@ -472,7 +497,10 @@ public final class TouchPadView extends View {
             sel.setStyle(Paint.Style.STROKE);
             sel.setStrokeWidth(6f);
             sel.setColor(ACCENT);
-            c.drawCircle(px(selected), py(selected), pr(selected) + 8f, sel);
+            float x = selected == MENU_CONTROL ? menuX * w() : px(selected);
+            float y = selected == MENU_CONTROL ? menuY * h() : py(selected);
+            float radius = selected == MENU_CONTROL ? TOGGLE_R * menuScale * h() : pr(selected);
+            c.drawCircle(x, y, radius + 8f, sel);
         }
         // hint and the tool buttons
         text.setTextSize(hh * 0.032f);
