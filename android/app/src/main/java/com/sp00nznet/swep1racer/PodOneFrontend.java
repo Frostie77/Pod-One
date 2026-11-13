@@ -25,7 +25,7 @@ final class PodOneFrontend {
     static final float[] SIZES = {0.85f, 1.0f, 1.2f};
 
     private static final String[] ASPECT_NAMES = {
-        "Original (4:3)", "Expand (16:9)", "Expand (16:10)", "Expand (3:2)", "Expand (21:9)"
+        "Original (4:3)", "Expand (16:9)", "Expand (16:10)", "Expand (3:2)", "Expand (21:9)", "Expand to Screen"
     };
     private static final String[] FILTER_NAMES = {"Sharp", "Smooth"};
     private static final String[] SCALE_NAMES = {"1x", "2x", "3x", "Fit"};
@@ -129,7 +129,7 @@ final class PodOneFrontend {
             case "graphics":
                 return Arrays.asList(
                     item("renderer", "Renderer", "RT64 Vulkan", "Native Android Vulkan renderer"),
-                    item("aspect", "Game Aspect Ratio", ASPECT_NAMES[index(ASPECT, DEF_ASPECT, 5)],
+                    item("aspect", "Game Aspect Ratio", ASPECT_NAMES[index(ASPECT, DEF_ASPECT, 6)],
                          "Expand the 3D scene without stretching it; HUD remains under review"),
                     item("resolution", "Render Resolution", SCALE_NAMES[index(RESOLUTION, DEF_RESOLUTION, 4)],
                          "3D resolution; Fit uses integer scaling"),
@@ -230,7 +230,7 @@ final class PodOneFrontend {
         }
         final SharedPreferences.Editor e = prefs.edit();
         switch (id) {
-            case "aspect": e.putInt(ASPECT, cycle(ASPECT, DEF_ASPECT, 5, delta)); break;
+            case "aspect": e.putInt(ASPECT, cycle(ASPECT, DEF_ASPECT, 6, delta)); break;
             case "resolution": e.putInt(RESOLUTION, cycle(RESOLUTION, DEF_RESOLUTION, 4, delta)); break;
             case "filter": e.putInt(FILTER, cycle(FILTER, DEF_FILTER, 2, delta)); break;
             case "msaa": e.putInt(MSAA, cycle(MSAA, 0, 3, delta)); break;
