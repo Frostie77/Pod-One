@@ -61,3 +61,6 @@ rsp/
 android/app/src/main/res/drawable-nodpi/pod_one_launcher_art.jpg
 # Temporary source backups
 *.backup
+
+# User-approved private full-size Android icon
+android/app/src/main/res/drawable-nodpi/pod_one_approved_icon.png
