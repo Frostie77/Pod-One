@@ -56,3 +56,8 @@ docs/QWEN_*.md
 # RSPRecomp output (made from the ROM) and local configs with ROM paths
 rsp/
 *.local.toml
+
+# Private artwork supplied by the player; not part of the public source
+android/app/src/main/res/drawable-nodpi/pod_one_launcher_art.jpg
+# Temporary source backups
+*.backup
