@@ -39,7 +39,7 @@ static void dummy_check_interrupts() {
 
 // Pod One picture settings from FrostFrontend, set through JNI from the UI thread and
 // applied on RT64's thread at the next update_screen. -1 = not set yet (keep rt64.json's value).
-//   aspect: 0 = 4:3, 1 = 16:9, 2 = 21:9 (fitted to the screen width: letterboxed on a 20:9 phone);  filter: 0 = sharp, 1 = smooth;
+//   aspect: 0 = 4:3, 1 = 16:9, 2 = 16:10, 3 = 3:2, 4 = 21:9, 5 = Expand to Screen;  filter: 0 = sharp, 1 = smooth;
 //   resolution: 0 = 1x (N64), 1 = 2x, 2 = 3x, 3 = fit the screen (whole multiple).
 #include <atomic>
 static std::atomic<int> g_video_aspect{ -1 }, g_video_filter{ -1 }, g_video_resolution{ -1 };
@@ -314,6 +314,10 @@ public:
         const int filter = g_video_filter.load(), resolution = g_video_resolution.load();
         if (aspect == 0) {
             cfg.aspectRatio = RT64::UserConfiguration::AspectRatio::Original;
+        } else if (aspect == 5) {
+            // Fill the device's available viewport using native expanded 3D,
+            // instead of stretching a fixed aspect-ratio framebuffer.
+            cfg.aspectRatio = RT64::UserConfiguration::AspectRatio::Expand;
         } else if (aspect >= 1) {
             static const double targets[] = { 0.0, 16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0, 21.0 / 9.0 };
             aspect = (aspect > 4) ? 4 : aspect;
