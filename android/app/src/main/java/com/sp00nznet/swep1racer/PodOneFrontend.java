@@ -84,7 +84,7 @@ final class PodOneFrontend {
             @Override public List<FrostFrontendView.Item> itemsForTab(String tab) { return items(tab); }
             @Override public void onItemSelected(String tab, String id) { change(tab, id, 1); }
             @Override public void onItemAdjusted(String tab, String id, int direction) {
-                if ("graphics".equals(tab) || "touch".equals(tab) && !"edit".equals(id)) {
+                if (("graphics".equals(tab) && !id.equals("driver") && !id.equals("share_log")) || ("touch".equals(tab) && !"edit".equals(id))) {
                     change(tab, id, direction);
                 }
             }
@@ -129,6 +129,10 @@ final class PodOneFrontend {
             case "graphics":
                 return Arrays.asList(
                     item("renderer", "Renderer", "RT64 Vulkan", "Native Android Vulkan renderer"),
+                    item("driver", "Graphics Driver Selection", "Android system",
+                         "Open Android Developer options for per-app Vulkan driver preferences"),
+                    item("share_log", "Share Startup Log", "",
+                         "Collect accessible game logs and open the Android share sheet"),
                     item("aspect", "Game Aspect Ratio", ASPECT_NAMES[index(ASPECT, DEF_ASPECT, 6)],
                          "Expand the 3D scene without stretching it; HUD remains under review"),
                     item("resolution", "Render Resolution", SCALE_NAMES[index(RESOLUTION, DEF_RESOLUTION, 4)],
@@ -184,6 +188,14 @@ final class PodOneFrontend {
     }
 
     private void change(String tab, String id, int delta) {
+        if ("graphics".equals(tab) && "driver".equals(id)) {
+            PodOneDiagnostics.openDriverPreferences(activity);
+            return;
+        }
+        if ("graphics".equals(tab) && "share_log".equals(id)) {
+            PodOneDiagnostics.shareStartupLog(activity);
+            return;
+        }
         if ("sound".equals(tab)) {
             if ("speaker".equals(id) && speaker.start())
                 Toast.makeText(activity, "Speaker test: left, right, both", Toast.LENGTH_SHORT).show();
