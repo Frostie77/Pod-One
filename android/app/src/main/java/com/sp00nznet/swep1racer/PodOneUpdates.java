@@ -20,8 +20,13 @@ final class PodOneUpdates {
 
     private PodOneUpdates() {}
 
+    /** Launcher shortcut: show result as a toast when no settings panel is visible. */
+    static void check(Activity activity) {
+        check(activity, null);
+    }
+
     static void check(Activity activity, FrostFrontendView frontend) {
-        frontend.setUpdateInfo(installed(activity), "Checking", "Contacting GitHub...");
+        if (frontend != null) frontend.setUpdateInfo(installed(activity), "Checking", "Contacting GitHub...");
         new Thread(() -> {
             String latest = "Unavailable", status;
             HttpURLConnection connection = null;
@@ -60,7 +65,7 @@ final class PodOneUpdates {
             final String result = latest, info = status;
             activity.runOnUiThread(() -> {
                 if (activity.isFinishing()) return;
-                frontend.setUpdateInfo(installed(activity), result, info);
+                if (frontend != null) frontend.setUpdateInfo(installed(activity), result, info);
                 Toast.makeText(activity, info, Toast.LENGTH_LONG).show();
             });
         }, "PodOne-UpdateCheck").start();
