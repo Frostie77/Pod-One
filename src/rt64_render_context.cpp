@@ -6,6 +6,7 @@
 #include "hle/rt64_application.h"
 
 #include <SDL.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -36,23 +37,27 @@ static void dummy_check_interrupts() {
     // No-op: ultramodern handles interrupts
 }
 
-// 2026-10-21 (Claude): picture settings from the side menu (RacerMenu.java), set through JNI from the UI thread and
+// Pod One picture settings from FrostFrontend, set through JNI from the UI thread and
 // applied on RT64's thread at the next update_screen. -1 = not set yet (keep rt64.json's value).
 //   aspect: 0 = 4:3, 1 = 16:9, 2 = 21:9 (fitted to the screen width: letterboxed on a 20:9 phone);  filter: 0 = sharp, 1 = smooth;
 //   resolution: 0 = 1x (N64), 1 = 2x, 2 = 3x, 3 = fit the screen (whole multiple).
 #include <atomic>
 static std::atomic<int> g_video_aspect{ -1 }, g_video_filter{ -1 }, g_video_resolution{ -1 };
 static std::atomic<bool> g_video_dirty{ false };
+static std::atomic<int> g_video_msaa{ 0 }, g_video_downsample{ 0 }, g_video_refresh{ 0 };
 static std::atomic<float> g_game_fps{ 0.0f };   // frames the game finished per second (VI origin changes)
 static std::atomic<float> g_dl_rate{ 0.0f };    // display lists (graphics tasks) per second
 
 #if defined(__ANDROID__)
 #include <jni.h>
 extern "C" JNIEXPORT void JNICALL
-Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetVideo(JNIEnv*, jclass, jint aspect, jint filter, jint resolution) {
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetVideo(JNIEnv*, jclass, jint aspect, jint filter, jint resolution, jint msaa, jint downsample, jint refresh) {
     g_video_aspect.store(aspect);
     g_video_filter.store(filter);
     g_video_resolution.store(resolution);
+    g_video_msaa.store(msaa);
+    g_video_downsample.store(downsample);
+    g_video_refresh.store(refresh);
     g_video_dirty.store(true);
 }
 
@@ -310,8 +315,8 @@ public:
         if (aspect == 0) {
             cfg.aspectRatio = RT64::UserConfiguration::AspectRatio::Original;
         } else if (aspect >= 1) {
-            static const double targets[] = { 0.0, 16.0 / 9.0, 21.0 / 9.0 };
-            aspect = (aspect > 2) ? 2 : aspect;
+            static const double targets[] = { 0.0, 16.0 / 9.0, 16.0 / 10.0, 3.0 / 2.0, 21.0 / 9.0 };
+            aspect = (aspect > 4) ? 4 : aspect;
             cfg.aspectRatio = RT64::UserConfiguration::AspectRatio::Manual;
             cfg.aspectTarget = targets[aspect];
         }
@@ -328,7 +333,18 @@ public:
         } else if (resolution == 3) {
             cfg.resolution = RT64::UserConfiguration::Resolution::WindowIntegerScale;
         }
-        printf("[SWE1R] video settings: aspect %d, filter %d, resolution %d\n", aspect, filter, resolution);
+        const int msaa = std::clamp(g_video_msaa.load(), 0, 2);
+        cfg.antialiasing = msaa == 0 ? RT64::UserConfiguration::Antialiasing::None
+            : msaa == 1 ? RT64::UserConfiguration::Antialiasing::MSAA2X
+                        : RT64::UserConfiguration::Antialiasing::MSAA4X;
+        cfg.downsampleMultiplier = std::clamp(g_video_downsample.load() + 1, 1, 3);
+        const int refresh = std::clamp(g_video_refresh.load(), 0, 2);
+        cfg.refreshRate = refresh == 0 ? RT64::UserConfiguration::RefreshRate::Original
+            : refresh == 1 ? RT64::UserConfiguration::RefreshRate::Display
+                           : RT64::UserConfiguration::RefreshRate::Manual;
+        cfg.refreshRateTarget = 60;
+        printf("[SWE1R] video: aspect %d filter %d scale %d msaa %d downsample %d refresh %d\n",
+               aspect, filter, resolution, msaa, cfg.downsampleMultiplier, refresh);
         app_->updateUserConfig(true);
     }
 
