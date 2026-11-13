@@ -104,6 +104,7 @@ final class PodOneFrontend {
     boolean handleKeyEvent(KeyEvent e) { return frontend.handleKeyEvent(e); }
     boolean handleGenericMotionEvent(MotionEvent e) { return frontend.handleGenericMotionEvent(e); }
     void destroy() { speaker.stop(); }
+    void reapplyMappings() { applyMappings(); }
 
     private void applyMappings() {
         int[] keys = new int[ACTION_IDS.length];
