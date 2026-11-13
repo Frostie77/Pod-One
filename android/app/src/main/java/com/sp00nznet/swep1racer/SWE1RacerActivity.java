@@ -26,7 +26,7 @@ import java.util.Locale;
 /**
  * The game. Started from LauncherActivity (the start screen picks and checks the ROM), in its own process ":game"
  * (AndroidManifest.xml): SDL cannot start twice in one process, so leaving the game ends that process and the
- * launcher is back for the next Play. The pad's ≡ button opens RacerMenu; its settings are applied again here at
+ * launcher is back for the next Play. The pad's ≡ button opens FrostFrontend; its settings are applied again here at
  * every start.
  */
 public final class SWE1RacerActivity extends SDLActivity {
@@ -73,6 +73,7 @@ public final class SWE1RacerActivity extends SDLActivity {
             return;
         }
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PodOneFrontend.PREFS, MODE_PRIVATE);
         if (mLayout != null) {
             pad = new TouchPadView(this);
@@ -137,6 +138,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
+            if (menu != null) menu.reapplyMappings();
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
