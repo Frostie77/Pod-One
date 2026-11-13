@@ -78,7 +78,7 @@ public final class PodOneSettingsActivity extends Activity {
             }
             @Override public void onItemSelected(String tab, String id) { adjust(tab,id,1); }
             @Override public void onItemAdjusted(String tab, String id, int direction) {
-                if ("graphics".equals(tab) || "touch".equals(tab)) adjust(tab,id,direction);
+                if (("graphics".equals(tab) && !id.equals("driver") && !id.equals("share_log")) || "touch".equals(tab)) adjust(tab,id,direction);
             }
             @Override public void onVisibilityChanged(boolean visible) {
                 if (!visible) finish();
@@ -103,6 +103,9 @@ public final class PodOneSettingsActivity extends Activity {
         switch (tab) {
             case "graphics": return Arrays.asList(
                 item("renderer","Renderer","RT64 Vulkan","Android renderer"),
+                item("driver","Graphics Driver Selection","Android system",
+                     "Open Android Developer options for supported driver preferences"),
+                item("share_log","Share Startup Log","","Share game and device diagnostics"),
                 item("aspect","Game Aspect Ratio",ASPECTS[ix("aspect",0,6)],"True 3D expansion; HUD alignment pending testing"),
                 item("resolution","Render Resolution",SCALES[ix("resolution",3,4)],"3D resolution or Fit"),
                 item("downsample","Downsampling Quality",DOWNSAMPLES[ix("downsample",0,3)],"RT64 downsampling"),
@@ -148,6 +151,14 @@ public final class PodOneSettingsActivity extends Activity {
     }
 
     private void adjust(String tab,String id,int d) {
+        if ("graphics".equals(tab) && "driver".equals(id)) {
+            PodOneDiagnostics.openDriverPreferences(this);
+            return;
+        }
+        if ("graphics".equals(tab) && "share_log".equals(id)) {
+            PodOneDiagnostics.shareStartupLog(this);
+            return;
+        }
         if ("sound".equals(tab)) {
             if ("speaker".equals(id)) speaker.start();
             return;
