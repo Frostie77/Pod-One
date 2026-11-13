@@ -188,6 +188,20 @@ $gradleLog = Join-Path $PSScriptRoot 'build\gradle.log'
 $started = Get-Date
 $ErrorActionPreference = 'Continue'
 & $java '-Xmx64m' '-classpath' $wrapper 'org.gradle.wrapper.GradleWrapperMain' '-p' 'android' ':app:assembleDebug' '--console=plain' *> $gradleLog
+# RT64's generated SPIR-V headers can occasionally race the C++ compile on Windows.
+# If (and only if) that exact error occurs, complete the shader target before retrying once.
+if ($LASTEXITCODE -ne 0 -and (Select-String -LiteralPath $gradleLog -Pattern '\.hlsl\.spirv\.h.*file not found' -Quiet)) {
+    Write-Host '   RT64 shader headers incomplete; generating shader target and retrying...' -ForegroundColor Yellow
+    $ninja = Join-Path $sdkCmake 'ninja.exe'
+    $buildNinja = Get-ChildItem 'android\app\.cxx' -Recurse -Filter 'build.ninja' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($buildNinja -and (Test-Path -LiteralPath $ninja)) {
+        & $ninja '-C' $buildNinja.DirectoryName 'rt64_generated_shader_outputs'
+        if ($LASTEXITCODE -eq 0) {
+            & $java '-Xmx64m' '-classpath' $wrapper 'org.gradle.wrapper.GradleWrapperMain' '-p' 'android' ':app:assembleDebug' '--console=plain' *> $gradleLog
+        }
+    }
+}
 if ($LASTEXITCODE -ne 0) {
     Select-String -LiteralPath $gradleLog -Pattern 'error|What went wrong|FAILED' | Select-Object -First 20 |
         ForEach-Object { Write-Host "   $($_.Line)" }
