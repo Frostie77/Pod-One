@@ -19,6 +19,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".PodOneSettingsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
         <!-- The game, in its own process: SDL cannot start twice in one process, so quitting ends it.
              Exported (no intent filter) only so adb test scripts can start it; without a ROM it opens the launcher. -->
         <activity
