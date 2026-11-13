@@ -273,7 +273,7 @@ public final class LauncherActivity extends Activity {
                     .setMessage("This will replace the current Racer save. The previous save will be kept as a local .bak file.")
                     .setNegativeButton("Cancel", (d, w) -> temp.delete())
                     .setPositiveButton("Restore", (d, w) -> {
-                        File backup = new File(target.getAbsolutePath() + ".bak");
+                        File backup = new File(target.getAbsolutePath() + "." + System.currentTimeMillis() + ".bak");
                         if (target.exists() && !target.renameTo(backup)) {
                             message("Could not back up existing save."); return;
                         }
