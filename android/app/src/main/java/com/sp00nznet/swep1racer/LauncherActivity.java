@@ -173,7 +173,12 @@ public final class LauncherActivity extends Activity {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(51));
         params.bottomMargin = dp(6);
         box.addView(b, params);
-        b.setBackgroundColor(0xD608192F);
+        GradientDrawable idle = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xE80C2035, 0xCC142A43});
+        idle.setCornerRadius(dp(12));
+        idle.setStroke(dp(2), 0xFF3977AB);
+        b.setBackground(idle);
         return b;
     }
 
@@ -306,13 +311,12 @@ public final class LauncherActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_A
-                && event.getAction() == KeyEvent.ACTION_UP) {
-            View focused = getCurrentFocus();
-            if (focused instanceof Button) {
-                focused.performClick();
-                return true;
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_A) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                View focused = getCurrentFocus();
+                if (focused instanceof Button) focused.performClick();
             }
+            return true;
         }
         if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_B) {
             if (event.getAction() == KeyEvent.ACTION_UP) finish();
