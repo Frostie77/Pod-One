@@ -5,7 +5,7 @@
         android:gwpAsanMode="always"
         android:memtagMode="sync"
         android:hasCode="true"
-        android:label="Star Wars Episode I: Racer"
+        android:label="Pod One"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material.NoActionBar">
