@@ -25,7 +25,7 @@ public final class PodOneSettingsActivity extends Activity {
     private boolean mapping;
 
     private static final String[] ASPECTS = {
-        "Original (4:3)", "Expand (16:9)", "Expand (16:10)", "Expand (3:2)", "Expand (21:9)"
+        "Original (4:3)", "Expand (16:9)", "Expand (16:10)", "Expand (3:2)", "Expand (21:9)", "Expand to Screen"
     };
     private static final String[] FILTERS = {"Sharp", "Smooth"};
     private static final String[] SCALES = {"1x", "2x", "3x", "Fit"};
@@ -103,7 +103,7 @@ public final class PodOneSettingsActivity extends Activity {
         switch (tab) {
             case "graphics": return Arrays.asList(
                 item("renderer","Renderer","RT64 Vulkan","Android renderer"),
-                item("aspect","Game Aspect Ratio",ASPECTS[ix("aspect",0,5)],"True 3D expansion; HUD alignment pending testing"),
+                item("aspect","Game Aspect Ratio",ASPECTS[ix("aspect",0,6)],"True 3D expansion; HUD alignment pending testing"),
                 item("resolution","Render Resolution",SCALES[ix("resolution",3,4)],"3D resolution or Fit"),
                 item("downsample","Downsampling Quality",DOWNSAMPLES[ix("downsample",0,3)],"RT64 downsampling"),
                 item("filter","Filtering",FILTERS[ix("filter",1,2)],"Sharp or smooth picture"),
@@ -181,7 +181,7 @@ public final class PodOneSettingsActivity extends Activity {
         }
         SharedPreferences.Editor e=prefs.edit();
         switch(id) {
-            case "aspect": e.putInt("aspect",cy("aspect",0,5,d)); break;
+            case "aspect": e.putInt("aspect",cy("aspect",0,6,d)); break;
             case "resolution": e.putInt("resolution",cy("resolution",3,4,d)); break;
             case "downsample": e.putInt("downsample",cy("downsample",0,3,d)); break;
             case "filter": e.putInt("filter",cy("filter",1,2,d)); break;
