@@ -68,21 +68,21 @@ public final class LauncherActivity extends Activity {
 
         GradientDrawable shade = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xF608172B, 0xE708172B, 0x9408172B, 0x1408172B});
+                new int[]{0xF608172B, 0xDD08172B, 0x4808172B, 0x0008172B});
         View shadeView = new View(this);
         shadeView.setBackground(shade);
         root.addView(shadeView, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(22), dp(14), dp(10), dp(10));
-        final int panelWidth = Math.min(dp(390), Math.round(getResources().getDisplayMetrics().widthPixels * 0.52f));
+        layout.setPadding(dp(17), dp(11), dp(8), dp(9));
+        final int panelWidth = Math.min(dp(306), Math.round(getResources().getDisplayMetrics().widthPixels * 0.34f));
 
         TextView heading = new TextView(this);
         heading.setText("POD ONE");
         heading.setTextColor(0xFFFFD787);
         heading.setTypeface(Typeface.DEFAULT_BOLD);
-        heading.setTextSize(TypedValue.COMPLEX_UNIT_SP, landscape ? 36 : 32);
+        heading.setTextSize(TypedValue.COMPLEX_UNIT_SP, landscape ? 32 : 29);
         heading.setGravity(Gravity.LEFT);
         layout.addView(heading);
 
@@ -90,7 +90,7 @@ public final class LauncherActivity extends Activity {
         subtitle.setText("STAR WARS EPISODE I: RACER");
         subtitle.setTextColor(0xFFDAE6F9);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        subtitle.setPadding(0, 0, 0, dp(14));
+        subtitle.setPadding(0, 0, 0, dp(9));
         layout.addView(subtitle);
 
         ScrollView scroll = new ScrollView(this);
@@ -119,7 +119,7 @@ public final class LauncherActivity extends Activity {
         root.addView(layout, menuParams);
 
         TextView footer = new TextView(this);
-        footer.setText("Pod One · development       A Select  ·  B Back");
+        footer.setText("Pod One · Development       A Select   ·   B Back");
         footer.setTextColor(0xFFE1E9F7);
         footer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         footer.setPadding(dp(8), dp(4), dp(12), dp(8));
@@ -155,10 +155,10 @@ public final class LauncherActivity extends Activity {
         b.setText(label);
         b.setAllCaps(false);
         b.setTextColor(Color.WHITE);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setGravity(Gravity.CENTER_VERTICAL | Gravity.LEFT);
-        b.setPadding(dp(18), 0, dp(8), 0);
+        b.setPadding(dp(12), 0, dp(6), 0);
         b.setFocusable(true);
         b.setOnClickListener(v -> action.run());
         b.setOnFocusChangeListener((v, focused) -> {
@@ -170,8 +170,8 @@ public final class LauncherActivity extends Activity {
             bg.setStroke(dp(2), focused ? 0xFFFFD269 : 0xFF3977AB);
             b.setBackground(bg);
         });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(51));
-        params.bottomMargin = dp(6);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(47));
+        params.bottomMargin = dp(5);
         box.addView(b, params);
         GradientDrawable idle = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
