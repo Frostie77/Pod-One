@@ -5,9 +5,15 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.graphics.Typeface;
 import android.net.Uri;
@@ -45,6 +51,7 @@ public final class LauncherActivity extends Activity {
 
     private TextView status;
     private Button play;
+    private LauncherReferenceView referenceView;
 
     private File rom() { return new File(getFilesDir(), "swe1racer/roms/selected.z64"); }
 
@@ -54,6 +61,25 @@ public final class LauncherActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        // Approved, user-supplied launcher mockup is a local-only resource.
+        // Display it directly with accessible interactive hit areas: this avoids
+        // reinventing the typography, logo, artwork and menu proportions.
+        int referenceId = getResources().getIdentifier("pod_one_launcher_reference",
+                "drawable", getPackageName());
+        if (referenceId != 0) {
+            Bitmap reference = BitmapFactory.decodeResource(getResources(), referenceId);
+            if (reference != null) {
+                referenceView = new LauncherReferenceView(reference);
+                setContentView(referenceView);
+                referenceView.requestFocus();
+                return;
+            }
+        }
         final boolean landscape = getResources().getConfiguration().orientation
                 == Configuration.ORIENTATION_LANDSCAPE;
 
@@ -145,9 +171,12 @@ public final class LauncherActivity extends Activity {
         s.append('\n');
         s.append(save().isFile() ? "Save: " + new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
                 .format(new Date(save().lastModified())) : "Save: none yet (the game makes one when you race)");
-        status.setText(s);
-        play.setEnabled(haveRom);
-        play.setAlpha(haveRom ? 1f : 0.5f);
+        if (status != null) status.setText(s);
+        if (play != null) {
+            play.setEnabled(haveRom);
+            play.setAlpha(haveRom ? 1f : 0.5f);
+        }
+        if (referenceView != null) referenceView.invalidate();
     }
 
     private Button button(LinearLayout box, String label, Runnable action) {
@@ -201,7 +230,7 @@ public final class LauncherActivity extends Activity {
         }
         if (request != PICK_ROM) return;
         final Uri uri = data.getData();
-        status.setText("Copying the ROM...");
+        if (status != null) status.setText("Copying the ROM...");
         // Large copy off the UI thread.
         new Thread(() -> {
             String message;
@@ -312,6 +341,7 @@ public final class LauncherActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (referenceView != null) return referenceView.handleKey(event);
         if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_A) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 View focused = getCurrentFocus();
@@ -324,6 +354,164 @@ public final class LauncherActivity extends Activity {
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Full-quality reference launcher. All art, lettering, icons and button
+     * silhouettes come from the user-approved image; no generated replacement
+     * elements are inserted here. The overlay supplies the actual interactions.
+     *
+     * Reference coordinate system: 1672 by 941 (16:9). We fit it inside the
+     * screen instead of stretching it, then map touch coordinates back.
+     */
+    private final class LauncherReferenceView extends View {
+        private static final float ART_W = 1672f, ART_H = 941f;
+        private final Bitmap reference;
+        private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final Paint tint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF[] hitAreas = new RectF[] {
+            new RectF(35, 257, 465, 345), // Play
+            new RectF(41, 357, 464, 432), // Settings
+            new RectF(41, 439, 464, 516), // Save Management
+            new RectF(41, 526, 464, 601), // Updates
+            new RectF(41, 610, 464, 685), // Diagnostics
+            new RectF(41, 693, 464, 769)  // Quit
+        };
+        private int choice = 0;
+        private float scale = 1f, left, top;
+
+        LauncherReferenceView(Bitmap art) {
+            super(LauncherActivity.this);
+            reference = art;
+            setFocusable(true);
+            setFocusableInTouchMode(true);
+            setContentDescription("Pod One launcher. Use up and down to choose an option, A to select. "
+                    + "Long press Play to choose a different ROM.");
+        }
+
+        private void transform() {
+            scale = Math.min(getWidth() / ART_W, getHeight() / ART_H);
+            left = (getWidth() - ART_W * scale) * 0.5f;
+            top = (getHeight() - ART_H * scale) * 0.5f;
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            transform();
+            canvas.drawColor(0xFF061323);
+            canvas.save();
+            canvas.translate(left, top);
+            canvas.scale(scale, scale);
+            canvas.drawBitmap(reference, null, new RectF(0, 0, ART_W, ART_H), imagePaint);
+
+            if (choice != 0) {
+                // The reference deliberately highlights Play. Dim it when
+                // another control is focused so only one selection is active.
+                RectF playBounds = hitAreas[0];
+                tint.setStyle(Paint.Style.FILL);
+                tint.setColor(0xC7081B31);
+                canvas.drawRoundRect(playBounds, 20, 20, tint);
+                tint.setColor(0xFFE1EFFA);
+                tint.setTextSize(28);
+                tint.setTypeface(Typeface.DEFAULT_BOLD);
+                canvas.drawText("▶   Play Game", 77, 298, tint);
+                tint.setTextSize(16);
+                tint.setTypeface(Typeface.DEFAULT);
+                canvas.drawText("Start Star Wars Racer", 159, 324, tint);
+                tint.setStyle(Paint.Style.STROKE);
+                tint.setStrokeWidth(2.5f);
+                tint.setColor(0xFF278DCD);
+                canvas.drawRoundRect(playBounds, 20, 20, tint);
+            }
+            if (choice > 0) {
+                RectF current = hitAreas[choice];
+                tint.setStyle(Paint.Style.FILL);
+                tint.setColor(0x553C2906);
+                canvas.drawRoundRect(current, 18, 18, tint);
+                tint.setStyle(Paint.Style.STROKE);
+                tint.setStrokeWidth(4f);
+                tint.setColor(0xFFFFD36D);
+                canvas.drawRoundRect(current, 18, 18, tint);
+            }
+            // The reference image uses an illustrative release number.
+            // Always show the installed build's actual version instead.
+            tint.setStyle(Paint.Style.FILL);
+            tint.setColor(0xFA071A2D);
+            RectF badge = new RectF(48, 837, 339, 895);
+            canvas.drawRoundRect(badge, 30, 30, tint);
+            tint.setStyle(Paint.Style.STROKE);
+            tint.setStrokeWidth(2);
+            tint.setColor(0xFF4D6980);
+            canvas.drawRoundRect(badge, 30, 30, tint);
+            tint.setStyle(Paint.Style.FILL);
+            tint.setTypeface(Typeface.DEFAULT);
+            tint.setTextSize(20);
+            tint.setColor(0xFFEBF3FA);
+            String version = "Development";
+            try {
+                version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            } catch (Exception ignored) {}
+            canvas.drawText("Pod One v" + version + " (dev)", 79, 873, tint);
+            canvas.restore();
+        }
+
+        private void runChoice(int index) {
+            switch (index) {
+                case 0:
+                    if (rom().isFile()) startActivity(new Intent(LauncherActivity.this, SWE1RacerActivity.class));
+                    else pickRom();
+                    break;
+                case 1: startActivity(new Intent(LauncherActivity.this, PodOneSettingsActivity.class)); break;
+                case 2: showSaveManager(); break;
+                case 3: PodOneUpdates.check(LauncherActivity.this); break;
+                case 4: showDiagnostics(); break;
+                case 5: finish(); break;
+                default: break;
+            }
+        }
+
+        boolean handleKey(KeyEvent event) {
+            if (event.getAction() != KeyEvent.ACTION_DOWN || event.getRepeatCount() != 0)
+                return true;
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    choice = (choice + hitAreas.length - 1) % hitAreas.length;
+                    break;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    choice = (choice + 1) % hitAreas.length;
+                    break;
+                case KeyEvent.KEYCODE_BUTTON_A:
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                    runChoice(choice);
+                    break;
+                case KeyEvent.KEYCODE_BUTTON_Y:
+                    pickRom(); // Optional controller shortcut to replace the game ROM.
+                    break;
+                case KeyEvent.KEYCODE_BUTTON_B:
+                case KeyEvent.KEYCODE_BACK:
+                    finish();
+                    break;
+                default: return false;
+            }
+            invalidate();
+            return true;
+        }
+
+        @Override public boolean onTouchEvent(MotionEvent event) {
+            if (event.getActionMasked() != MotionEvent.ACTION_UP) return true;
+            transform();
+            float x = (event.getX() - left) / scale;
+            float y = (event.getY() - top) / scale;
+            for (int i = 0; i < hitAreas.length; i++) {
+                if (!hitAreas[i].contains(x, y)) continue;
+                choice = i;
+                invalidate();
+                runChoice(i);
+                return true;
+            }
+            return true;
+        }
     }
 
     private String importRom(Uri uri) throws IOException {
