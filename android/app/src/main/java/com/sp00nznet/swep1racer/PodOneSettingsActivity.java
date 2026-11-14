@@ -68,7 +68,9 @@ public final class PodOneSettingsActivity extends Activity {
             new FrostFrontendView.Tab("controls", "Controls"),
             new FrostFrontendView.Tab("touch", "Touch Settings"),
             new FrostFrontendView.Tab("saves", "Save Management"),
-            new FrostFrontendView.Tab("updates", "Updates")
+            new FrostFrontendView.Tab("updates", "Updates"),
+            new FrostFrontendView.Tab("diagnostics", "Diagnostics"),
+            new FrostFrontendView.Tab("about", "About")
         ));
         frontend.setUpdateInfo("Pod One (development)", "Not checked",
                 "Checks published GitHub releases, not ROM-derived APK downloads.");
@@ -102,18 +104,19 @@ public final class PodOneSettingsActivity extends Activity {
     private List<FrostFrontendView.Item> items(String tab) {
         switch (tab) {
             case "graphics": return Arrays.asList(
-                item("renderer","Renderer","RT64 Vulkan","Android renderer"),
-                item("driver","Graphics Driver Selection","Android system",
-                     "Open Android Developer options for supported driver preferences"),
-                item("share_log","Share Startup Log","","Share game and device diagnostics"),
-                item("aspect","Game Aspect Ratio",ASPECTS[ix("aspect",0,6)],"True 3D expansion; HUD alignment pending testing"),
-                item("resolution","Render Resolution",SCALES[ix("resolution",3,4)],"3D resolution or Fit"),
-                item("downsample","Downsampling Quality",DOWNSAMPLES[ix("downsample",0,3)],"RT64 downsampling"),
-                item("filter","Filtering",FILTERS[ix("filter",1,2)],"Sharp or smooth picture"),
-                item("msaa","MS Anti-Aliasing",MSAAS[ix("msaa",0,3)],"2x/4x experimental on Odin"),
-                item("window","Window Mode","Fullscreen","Android immersive fullscreen"),
-                item("refresh","Framerate / Refresh",REFRESH[ix("refresh",0,3)],"Refresh output, not game speed"),
-                item("fps","FPS Counter",onOff("fps",false),"In-game overlay")
+                item("resolution","Resolution Scale",SCALES[ix("resolution",3,4)],"Internal resolution or Fit"),
+                item("downsample","Downsampling",DOWNSAMPLES[ix("downsample",0,3)],"RT64 downsampling"),
+                item("aspect","Aspect Ratio",ASPECTS[ix("aspect",0,6)],
+                     "Original, fixed ratio or Expand to Screen without stretching"),
+                item("window","Display Mode","Fullscreen","Immersive fullscreen Vulkan"),
+                item("refresh","Framerate / Refresh",REFRESH[ix("refresh",0,3)],
+                     "Display refresh mode; game speed unchanged"),
+                item("msaa","MSAA",MSAAS[ix("msaa",0,3)],"Anti-aliasing, experimental on Odin"),
+                item("filter","Texture Filtering",FILTERS[ix("filter",1,2)],"Sharp or smooth output"),
+                item("driver","Graphics Driver","System default",
+                     "Opens Android system driver preferences, not custom drivers"),
+                item("share_log","Share Startup Log","","Share available app/device diagnostics"),
+                item("fps","Show FPS Counter",onOff("fps",false),"In-game FPS overlay")
             );
             case "sound": return Arrays.asList(
                 item("speaker","Stereo Speaker Test","","Left, right, then both"),
@@ -146,17 +149,30 @@ public final class PodOneSettingsActivity extends Activity {
                 item("manage_saves","Save Management","Launcher","Back out to launcher to import, export or delete safely"));
             case "updates": return Collections.singletonList(
                 item("check","Check GitHub Releases","","No game assets are downloaded"));
+            case "diagnostics": return Arrays.asList(
+                item("share_log","Share Startup Log","","Share app-readable logs and device information"),
+                item("driver","Android Driver Preferences","","Open supported system per-app driver settings")
+            );
+            case "about": return Collections.singletonList(
+                item("credits","About Pod One","","Port credits and game copyright information"));
             default: return Collections.emptyList();
         }
     }
 
     private void adjust(String tab,String id,int d) {
-        if ("graphics".equals(tab) && "driver".equals(id)) {
+        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "driver".equals(id)) {
             PodOneDiagnostics.openDriverPreferences(this);
             return;
         }
-        if ("graphics".equals(tab) && "share_log".equals(id)) {
+        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "share_log".equals(id)) {
             PodOneDiagnostics.shareStartupLog(this);
+            return;
+        }
+        if ("about".equals(tab) && "credits".equals(id)) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("About Pod One")
+                .setMessage("Native Android port of Star Wars Episode I: Racer. Based on sp00nznet/racer and dguillot-gh/star-wars-racer-recomp. FrostFrontend by Frostie77. Game and artwork remain their owners' property.")
+                .setPositiveButton("OK",null).show();
             return;
         }
         if ("sound".equals(tab)) {
