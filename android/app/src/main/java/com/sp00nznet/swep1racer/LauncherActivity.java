@@ -451,7 +451,7 @@ public final class LauncherActivity extends Activity {
             try {
                 version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
             } catch (Exception ignored) {}
-            canvas.drawText("Pod One v" + version + " (dev)", 79, 873, tint);
+            canvas.drawText("Pod One v" + version, 79, 873, tint);
             canvas.restore();
         }
 
