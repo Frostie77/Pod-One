@@ -2,9 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
-// Optional personal approved icon. Keeping this untracked avoids putting game
-// artwork in the public source. Without it the existing vector icon is used.
-def approvedIcon = file('src/main/res/drawable-nodpi/pod_one_approved_icon.png')
+// Player-approved artwork is installed only locally. Android 8+ icons require
+// safe inset padding in an adaptive foreground; passing the full PNG directly
+// to the manifest lets Android crop the gold border on round-icon launchers.
+def approvedAdaptive = file('src/main/res/mipmap-anydpi-v26/pod_one_adaptive.xml')
 
 android {
     namespace 'com.sp00nznet.swep1racer'
@@ -16,8 +17,8 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1.0'
-        manifestPlaceholders = [podOneIcon: approvedIcon.isFile()
-                ? '@drawable/pod_one_approved_icon' : '@mipmap/ic_launcher']
+        manifestPlaceholders = [podOneIcon: approvedAdaptive.isFile()
+                ? '@mipmap/pod_one_adaptive' : '@mipmap/ic_launcher']
 
         ndk {
             abiFilters 'arm64-v8a'
