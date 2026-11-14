@@ -99,3 +99,12 @@
 - Android's round adaptive mask would crop the original full-bleed image; the private pack inserts the exact image into its safe inset, backed by blue. It also bumps the app development version so launcher icon caches can refresh. No app uninstall is necessary.
 - Shared FrostFrontend's approved screenshot provides a left sidebar, right selectable rows with value arrows, explanation panel and controller prompts. It stays on `FrostFrontend/feature/pod-one-sidebar` and is pinned through Pod One's test submodule.
 - These changes have **not yet passed an Odin 2 Portal visual regression test**. No claims of fully corrected wide HUD or custom Turnip drivers are made.
+
+### Approved artwork lock — device fit test v3
+
+- **Frozen launcher image:** `pod_one_launcher_reference.png`, 1672 × 941, copied pixel-for-pixel from the player's approved `Star Wars Racer_ Pod One Launcher.png`. SHA-256 of the local v3 resource: `c8261e4da23f55813240bd6aea1f34ae3c618496272a777b8d1e396483e44b99`.
+- **Do not replace, repaint, regenerate, crop, stretch, recolor or modify this artwork for later menu changes.** Future menu work changes only layout, controls and input-hit areas. The local pack verifies the SHA before building.
+- Launcher renderer now uses image's intrinsic size, a small overscan-safe inset and letterboxing instead of edge cropping, so the full reference image is always drawn on screen.
+- **Circular Android icon:** approved original STAR WARS/RACER/POD ONE/podracer core is retained, but the surrounding gold border was converted from a squircle to a true circle as explicitly requested. The Android adaptive foreground remains inside the centre safe zone; the old v2 round-square icon is superseded.
+- v3 artwork pack auto-detects JDK 17 after restarts. APK version 0.1.2-dev to encourage refresh of launcher cached icons.
+- This is an **artwork-only** visual correction; UI layout or game mechanics should not be changed with it. Pending real Odin visual confirmation.
