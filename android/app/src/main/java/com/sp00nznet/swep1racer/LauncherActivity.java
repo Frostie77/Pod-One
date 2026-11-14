@@ -386,13 +386,20 @@ public final class LauncherActivity extends Activity {
             setFocusable(true);
             setFocusableInTouchMode(true);
             setContentDescription("Pod One launcher. Use up and down to choose an option, A to select. "
-                    + "Long press Play to choose a different ROM.");
+                    + "Press Y to choose a different ROM.");
         }
 
         private void transform() {
-            scale = Math.min(getWidth() / ART_W, getHeight() / ART_H);
-            left = (getWidth() - ART_W * scale) * 0.5f;
-            top = (getHeight() - ART_H * scale) * 0.5f;
+            // 'Fit' rather than 'crop': all four edges, logo and reference
+            // footer remain visible at any display density or aspect ratio.
+            // A small safe inset protects artwork from device edge overscan.
+            final float safeInset = Math.max(dp(8), Math.min(getWidth(), getHeight()) * 0.012f);
+            final float artWidth = reference.getWidth();
+            final float artHeight = reference.getHeight();
+            scale = Math.min(Math.max(1f, getWidth() - safeInset * 2f) / artWidth,
+                             Math.max(1f, getHeight() - safeInset * 2f) / artHeight);
+            left = (getWidth() - artWidth * scale) * 0.5f;
+            top = (getHeight() - artHeight * scale) * 0.5f;
         }
 
         @Override protected void onDraw(Canvas canvas) {
@@ -402,7 +409,7 @@ public final class LauncherActivity extends Activity {
             canvas.save();
             canvas.translate(left, top);
             canvas.scale(scale, scale);
-            canvas.drawBitmap(reference, null, new RectF(0, 0, ART_W, ART_H), imagePaint);
+            canvas.drawBitmap(reference, 0, 0, imagePaint);
 
             if (choice != 0) {
                 // The reference deliberately highlights Play. Dim it when
