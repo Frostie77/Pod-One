@@ -64,3 +64,11 @@ android/app/src/main/res/drawable-nodpi/pod_one_launcher_art.jpg
 
 # User-approved private full-size Android icon
 android/app/src/main/res/drawable-nodpi/pod_one_approved_icon.png
+
+# Approved private Pod One reference launcher and Android adaptive icon resources.
+# Derived only from the user's supplied images and installed in their local build.
+android/app/src/main/res/drawable-nodpi/pod_one_launcher_reference.png
+android/app/src/main/res/drawable-nodpi/pod_one_icon_foreground.png
+android/app/src/main/res/drawable-nodpi/pod_one_icon_background.png
+android/app/src/main/res/mipmap-anydpi-v26/pod_one_adaptive.xml
+android/app/src/main/res/mipmap/pod_one_adaptive.png
