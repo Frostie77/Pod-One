@@ -10,17 +10,17 @@
 
 ### Launcher
 
-- Replaced the basic two-button start screen layout with a gamepad-focusable **Pod One** launch menu.
-- Play, Choose ROM, Settings, Save Management, Updates, Diagnostics and Quit.
+- The local test pack installs **exactly** the user-approved 1672×941 launcher reference as `drawable-nodpi/pod_one_launcher_reference.png`. LauncherActivity renders that image directly with functional touch/gamepad hotspots. The preview's logo, typography, button silhouettes, artwork and colors are not redrawn or replaced.
+- Visual launcher buttons (as approved): Play Game, Settings, Save Management, Updates, Diagnostics and Quit. When there is no imported ROM, Play opens the ROM picker; when a ROM exists, pressing Y from the launcher permits re-importing it.
 - ROM selection, byte-order conversion, SHA-1 verification and the separated `:game` process are preserved.
-- Local optional game artwork: `android/app/src/main/res/drawable-nodpi/pod_one_launcher_art.jpg`. The app uses its original vector art if absent. **Do not commit copyrighted cover artwork.**
-- Approved icon: `android/app/src/main/res/drawable-nodpi/pod_one_approved_icon.png`. Gradle selects this full-size icon when locally installed; the public repo retains its vector fallback. Remove the previous test asset `ic_launcher_foreground.png` to prevent double padding.
-- Left menu uses navy and gold with controller focus; it occupies at most 34% of display width (306dp cap), leaving more of the original artwork visible.
+- The previous `pod_one_launcher_art.jpg` (original cover with the centered title) is superseded by `pod_one_launcher_reference.png` for local builds. The original public-source vector fallback remains when the private screenshot is absent. **Do not commit copyrighted game artwork.**
+- Approved icon is the **unchanged** `Star Wars Racer Pod One Icon(1).png` the user supplied, scaled uniformly and inset within a 432px Android adaptive foreground's circular safe area. The private install pack provides `pod_one_icon_foreground.png`, `pod_one_icon_background.png` and the adaptive icon XML. Gradle selects `@mipmap/pod_one_adaptive` when installed; otherwise uses the public vector fallback. Old `pod_one_approved_icon.png` and `ic_launcher_foreground.png` test assets must be deleted.
+- With the private image installed, the approved screen itself defines the launcher layout. Controller focus highlights the corresponding image hitbox; no platform Buttons are drawn over the artwork. The private pack has a built-in version-badge correction displaying the installed development version instead of the reference's illustrative release label.
 
 ### In-game FrostFrontend
 
-- Replaces `RacerMenu`; old menu implementation removed.
-- Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates.
+- Replaces `RacerMenu`; old menu implementation removed. The right-hand FrostFrontend settings layout reproduces the approved dark navy/gold screenshot with the selected-item description card and controller footer.
+- Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates, Diagnostics, About. The latter two offer real own-app log sharing and port credits; no fake renderer/driver settings are added.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
 - Gamepad Select/Menu opens settings. The original Start button is reserved for Racer.
 - The shared FrostFrontend test submodule now has the preview-inspired **left-hand sidebar** and **right settings panel**. Changes remain on the shared library feature branch until device testing.
@@ -34,7 +34,7 @@
 - MSAA Off/2x/4x; downsampling Off/2x/3x; output refresh Original/Display/Manual 60.
 - Android Window Mode is fullscreen only; the menu shows the actual supported mode instead of offering a nonworking windowed toggle.
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
-- **HUD placement is not fixed.** The original N64 HUD may remain centred around 4:3. We deliberately did not patch arbitrary display-list rectangles or ROM addresses without a capture; later test the lap/time/position/minimap/speed readouts at all five ratios.
+- **HUD placement is not fixed.** The original N64 HUD may remain centred around 4:3. We deliberately did not patch arbitrary display-list rectangles or ROM addresses without a capture; later test the lap/time/position/minimap/speed readouts at all six ratios.
 
 ### Sound and input
 
@@ -91,3 +91,11 @@
 - Original recomp setup: [sp00nznet/racer](https://github.com/sp00nznet/racer)
 - Shared frontend: [Frostie77/FrostFrontend](https://github.com/Frostie77/FrostFrontend)
 - All original copyright notices and MIT attribution remain in `LICENSE`, `NOTICE.md` and `CREDITS.md`.
+
+## Visual reference validation (November 2026)
+
+- The **only** launcher reference is the user-uploaded `Star Wars Racer_ Pod One Launcher.png`; it is installed as an entire screen with live hotspots, not used as a backdrop with a second Android menu over it.
+- The **only** icon reference is the user's `Star Wars Racer Pod One Icon(1).png` (silver STAR WARS logo, gold RACER, silver POD ONE, two gold engine pods and magenta binder). No redesign or alternate icon generation.
+- Android's round adaptive mask would crop the original full-bleed image; the private pack inserts the exact image into its safe inset, backed by blue. It also bumps the app development version so launcher icon caches can refresh. No app uninstall is necessary.
+- Shared FrostFrontend's approved screenshot provides a left sidebar, right selectable rows with value arrows, explanation panel and controller prompts. It stays on `FrostFrontend/feature/pod-one-sidebar` and is pinned through Pod One's test submodule.
+- These changes have **not yet passed an Odin 2 Portal visual regression test**. No claims of fully corrected wide HUD or custom Turnip drivers are made.
