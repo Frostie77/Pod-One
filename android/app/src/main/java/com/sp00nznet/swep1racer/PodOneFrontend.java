@@ -76,7 +76,9 @@ final class PodOneFrontend {
             new FrostFrontendView.Tab("controls", "Controls"),
             new FrostFrontendView.Tab("touch", "Touch Settings"),
             new FrostFrontendView.Tab("saves", "Save Management"),
-            new FrostFrontendView.Tab("updates", "Updates")
+            new FrostFrontendView.Tab("updates", "Updates"),
+            new FrostFrontendView.Tab("diagnostics", "Diagnostics"),
+            new FrostFrontendView.Tab("about", "About")
         ));
         frontend.setUpdateInfo("Pod One (development)", "Not checked",
                 "Checks official Pod One GitHub releases; game files are never downloaded.");
@@ -128,23 +130,26 @@ final class PodOneFrontend {
         switch (tab) {
             case "graphics":
                 return Arrays.asList(
-                    item("renderer", "Renderer", "RT64 Vulkan", "Native Android Vulkan renderer"),
-                    item("driver", "Graphics Driver Selection", "Android system",
-                         "Open Android Developer options for per-app Vulkan driver preferences"),
-                    item("share_log", "Share Startup Log", "",
-                         "Collect accessible game logs and open the Android share sheet"),
-                    item("aspect", "Game Aspect Ratio", ASPECT_NAMES[index(ASPECT, DEF_ASPECT, 6)],
-                         "Expand the 3D scene without stretching it; HUD remains under review"),
-                    item("resolution", "Render Resolution", SCALE_NAMES[index(RESOLUTION, DEF_RESOLUTION, 4)],
-                         "3D resolution; Fit uses integer scaling"),
-                    item("downsample", "Downsampling Quality", DOWNSAMPLE_NAMES[index(DOWNSAMPLE, 0, 3)], ""),
-                    item("filter", "Filtering", FILTER_NAMES[index(FILTER, DEF_FILTER, 2)], ""),
-                    item("msaa", "MS Anti-Aliasing", MSAA_NAMES[index(MSAA, 0, 3)],
-                         "2x and 4x need device testing; Off is safest"),
-                    item("window", "Window Mode", "Fullscreen", "Android uses an immersive fullscreen surface"),
+                    item("resolution", "Resolution Scale", SCALE_NAMES[index(RESOLUTION, DEF_RESOLUTION, 4)],
+                         "RT64 internal resolution; Fit uses integer scaling"),
+                    item("downsample", "Downsampling", DOWNSAMPLE_NAMES[index(DOWNSAMPLE, 0, 3)],
+                         "RT64 downsample quality"),
+                    item("aspect", "Aspect Ratio", ASPECT_NAMES[index(ASPECT, DEF_ASPECT, 6)],
+                         "Original, fixed ratios, or Expand to Screen without stretching"),
+                    item("window", "Display Mode", "Fullscreen",
+                         "The Android Vulkan build uses immersive fullscreen"),
                     item("refresh", "Framerate / Refresh", REFRESH_NAMES[index(REFRESH, 0, 3)],
-                         "Display output refresh, not unlocked game logic speed"),
-                    item("fps", "Show FPS Counter", enabled(FPS, false), "Frames and display lists per second")
+                         "Select display refresh; the game's simulation speed is unchanged"),
+                    item("msaa", "MSAA", MSAA_NAMES[index(MSAA, 0, 3)],
+                         "Off, 2x or 4x anti-aliasing; requires Odin compatibility testing"),
+                    item("filter", "Texture Filtering", FILTER_NAMES[index(FILTER, DEF_FILTER, 2)],
+                         "Sharp or smooth output filtering"),
+                    item("driver", "Graphics Driver", "System default",
+                         "Opens Android's per-app driver settings; custom drivers are not installed"),
+                    item("share_log", "Share Startup Log", "",
+                         "Share available app logs and Android device information"),
+                    item("fps", "Show FPS Counter", enabled(FPS, false),
+                         "Show gameplay frames per second")
                 );
             case "sound":
                 return Arrays.asList(
@@ -183,17 +188,34 @@ final class PodOneFrontend {
             case "updates":
                 return Collections.singletonList(item("check", "Check for Updates", "",
                        "Query Pod One's published GitHub releases, if available"));
+            case "diagnostics":
+                return Arrays.asList(
+                    item("share_log", "Share Startup Log", "",
+                         "Share available app logcat records and device summary"),
+                    item("driver", "Android Driver Preferences", "",
+                         "Open supported Android per-app driver settings")
+                );
+            case "about":
+                return Collections.singletonList(item("credits", "About Pod One", "",
+                       "Android fan-made port; source attribution and licence information"));
             default: return Collections.emptyList();
         }
     }
 
     private void change(String tab, String id, int delta) {
-        if ("graphics".equals(tab) && "driver".equals(id)) {
+        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "driver".equals(id)) {
             PodOneDiagnostics.openDriverPreferences(activity);
             return;
         }
-        if ("graphics".equals(tab) && "share_log".equals(id)) {
+        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "share_log".equals(id)) {
             PodOneDiagnostics.shareStartupLog(activity);
+            return;
+        }
+        if ("about".equals(tab) && "credits".equals(id)) {
+            new android.app.AlertDialog.Builder(activity)
+                    .setTitle("About Pod One")
+                    .setMessage("Native Android port of Star Wars Episode I: Racer. Built on sp00nznet/racer and dguillot-gh/star-wars-racer-recomp; frontend by Frostie77. Game and artwork rights remain with their owners.")
+                    .setPositiveButton("OK", null).show();
             return;
         }
         if ("sound".equals(tab)) {
