@@ -249,6 +249,9 @@ constexpr uint64_t SWE1R_ROM_HASH = 0x9B89D0F9EBC12D32ULL; // XXH3_64bits of bas
 // =============================================================================
 static SDL_Window* g_window = nullptr;
 static SDL_GameController* g_controller = nullptr;
+static std::atomic<bool> g_frontend_open{false};
+// Android KeyEvent codes: A, B, Z, R, C-Up, C-Down, C-Left, C-Right.
+static std::atomic<int> g_gamepad_keys[8] = {96, 97, 104, 103, 100, 106, 99, 107};
 
 // =============================================================================
 // RSP Callbacks
@@ -423,6 +426,19 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetTouchPad(JNIEnv*, jclas
     g_touch_y.store((float)y);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetFrontendOpen(JNIEnv*, jclass, jboolean open) {
+    g_frontend_open.store(open == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetGamepadKeys(JNIEnv* env, jclass, jintArray keys) {
+    if (keys == nullptr || env->GetArrayLength(keys) != 8) return;
+    jint values[8];
+    env->GetIntArrayRegion(keys, 0, 8, values);
+    for (int i = 0; i < 8; ++i) g_gamepad_keys[i].store(values[i]);
+}
+
 // 2026-10-21 (Claude): the local player's boost state, for the pad's BOOST button (fires the moment it is ready).
 // Racer keeps a per-racer record array at 0x80118F90 (0x88 bytes each); record 0 is local player 1 when its tag at
 // +4 is 'Locl', and +0x84 points to the racer object ('Test', same layout as the PC version). In that object
@@ -450,6 +466,8 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     *buttons = 0;
     *x = 0.0f;
     *y = 0.0f;
+    // SDL polls the controller independently of Android UI key dispatch.
+    if (g_frontend_open.load()) return true;
 
     // Keyboard (desktop testing)
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
@@ -472,30 +490,43 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (keys[SDL_SCANCODE_A]) *x -= 1.0f;
     if (keys[SDL_SCANCODE_D]) *x += 1.0f;
 
-    // Physical game controller
+    // Physical gamepad bindings supplied by FrostFrontend.
+    // The analogue left-stick and right-stick camera remain unchanged.
     if (g_controller != nullptr) {
         auto btn = [](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(g_controller, b) != 0; };
         auto axis = [](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(g_controller, a) / 32768.0f; };
-        if (btn(SDL_CONTROLLER_BUTTON_A)) *buttons |= 0x8000;
-        if (btn(SDL_CONTROLLER_BUTTON_B)) *buttons |= 0x4000;
-        if (btn(SDL_CONTROLLER_BUTTON_X)) *buttons |= 0x0002;           // C-Left
-        if (btn(SDL_CONTROLLER_BUTTON_Y)) *buttons |= 0x0008;           // C-Up
-        if (btn(SDL_CONTROLLER_BUTTON_BACK)) *buttons |= 0x2000;        // Z
+        auto pressed = [&](int android_key) -> bool {
+            switch (android_key) {
+                case 96: return btn(SDL_CONTROLLER_BUTTON_A);
+                case 97: return btn(SDL_CONTROLLER_BUTTON_B);
+                case 99: return btn(SDL_CONTROLLER_BUTTON_X);
+                case 100: return btn(SDL_CONTROLLER_BUTTON_Y);
+                case 102: return btn(SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+                case 103: return btn(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+                case 104: return axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 0.30f;
+                case 105: return axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 0.30f;
+                case 106: return btn(SDL_CONTROLLER_BUTTON_LEFTSTICK);
+                case 107: return btn(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+                default: return false;
+            }
+        };
+        static constexpr uint16_t action_bits[8] = {
+            0x8000, 0x4000, 0x2000, 0x0010, 0x0008, 0x0004, 0x0002, 0x0001
+        };
+        for (int i = 0; i < 8; ++i) {
+            if (pressed(g_gamepad_keys[i].load())) *buttons |= action_bits[i];
+        }
         if (btn(SDL_CONTROLLER_BUTTON_START)) *buttons |= 0x1000;
-        if (btn(SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) *buttons |= 0x0020;  // L
-        if (btn(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) *buttons |= 0x0010; // R
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_UP)) *buttons |= 0x0800;
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) *buttons |= 0x0400;
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) *buttons |= 0x0200;
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) *buttons |= 0x0100;
-        if (axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 0.30f) *buttons |= 0x2000;  // Z
-        if (axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 0.30f) *buttons |= 0x0010; // R
         const float rx = axis(SDL_CONTROLLER_AXIS_RIGHTX);
         const float ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
-        if (ry < -0.5f) *buttons |= 0x0008; // C-Up
-        if (ry > 0.5f)  *buttons |= 0x0004; // C-Down
-        if (rx < -0.5f) *buttons |= 0x0002; // C-Left
-        if (rx > 0.5f)  *buttons |= 0x0001; // C-Right
+        if (ry < -0.5f) *buttons |= 0x0008;
+        if (ry > 0.5f)  *buttons |= 0x0004;
+        if (rx < -0.5f) *buttons |= 0x0002;
+        if (rx > 0.5f)  *buttons |= 0x0001;
         *x += axis(SDL_CONTROLLER_AXIS_LEFTX);
         *y -= axis(SDL_CONTROLLER_AXIS_LEFTY);
     }

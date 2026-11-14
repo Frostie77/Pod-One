@@ -27,7 +27,7 @@ static void swe1r_open_audio(uint32_t freq) {
     want.freq = (int)freq;
     want.format = AUDIO_S16SYS;
     want.channels = 2;
-    want.samples = 1024;
+    want.samples = 512;
     want.callback = nullptr; // queue mode
     g_audio_dev = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
     if (g_audio_dev == 0) {
@@ -55,7 +55,7 @@ void swe1r_queue_samples(int16_t* samples, size_t num_samples) {
         if (b > peak) peak = b;
     }
     // Do not let latency grow without bound if the game produces faster than real time.
-    if (SDL_GetQueuedAudioSize(g_audio_dev) > 48000u * 4u / 2u) {
+    if (SDL_GetQueuedAudioSize(g_audio_dev) > (g_audio_freq * 4u / 8u)) {
         SDL_ClearQueuedAudio(g_audio_dev);
     }
     SDL_QueueAudio(g_audio_dev, buf.data(), (Uint32)(num_samples * sizeof(int16_t)));
