@@ -338,7 +338,9 @@ public:
         resources.renderTargetManager.destroyAll();
         resources.framebufferManager.destroyAllTileCopies();
         resources.interpolatedColorTargets.clear();
-        for (auto &counters : resources.interpolatedFrames) counters = {};
+        // A VI update can present the last workload before another one is submitted.
+        // Keep one base frame so PresentQueue advances its present ID even here.
+        for (auto &counters : resources.interpolatedFrames) counters = {.count = 1};
         return true;
     }
 
