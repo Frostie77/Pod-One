@@ -1,12 +1,14 @@
 package com.sp00nznet.swep1racer;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import android.widget.Toast;
+
+import io.github.frostfrontend.FrostSpeakerTest;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -43,22 +45,25 @@ final class PodOneDiagnostics {
         }, "PodOne-DiagnosticShare").start();
     }
 
-    static void openDriverPreferences(Activity activity) {
-        // RT64 uses Android's Vulkan loader. System graphics-driver selection is
-        // configured outside our process, in Android Developer Options.
-        // Per-app custom Turnip drivers require separately integrated AdrenoTools
-        // before Vulkan is initialized, and are NOT installed by this shortcut.
-        try {
-            activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
-        } catch (Exception e) {
-            try {
-                activity.startActivity(new Intent(Settings.ACTION_SETTINGS));
-                Toast.makeText(activity, "Open Developer options → Graphics driver preferences",
-                        Toast.LENGTH_LONG).show();
-            } catch (Exception ignored) {
-                Toast.makeText(activity, "Android settings unavailable", Toast.LENGTH_LONG).show();
-            }
-        }
+    static void playSpeakerTest(Activity activity, FrostSpeakerTest speaker) {
+        if (speaker.start())
+            Toast.makeText(activity, "Speaker test: left, right, both", Toast.LENGTH_SHORT).show();
+    }
+
+    static void showGraphicsDriver(Activity activity) {
+        new AlertDialog.Builder(activity)
+                .setTitle("Graphics Driver")
+                .setMessage("Pod One uses Android’s system Vulkan driver. A device that offers "
+                        + "per-app driver preferences lists them in Android Developer Options.")
+                .setPositiveButton("Done", null)
+                .setNeutralButton("Developer Options", (dialog, which) -> {
+                    try {
+                        activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+                    } catch (ActivityNotFoundException | SecurityException error) {
+                        Toast.makeText(activity, "Developer Options are unavailable on this device.",
+                                Toast.LENGTH_LONG).show();
+                    }
+                }).show();
     }
 
     private static String collect(Activity activity) {

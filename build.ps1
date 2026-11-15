@@ -226,7 +226,7 @@ if ($devices.Count -eq 0) {
 }
 $out = & adb install -r $apk 2>&1 | Out-String
 if ($out -match 'Success') {
-    Ok 'installed. Open "Star Wars Episode I: Racer", tap "Choose your game ROM", pick your ROM, then Play.'
+    Ok 'installed. Open "Pod One". On a fresh install, use ROM Selection, then Play Game.'
 } elseif ($out -match 'INSTALL_FAILED_UPDATE_INCOMPATIBLE') {
     Fail 'the phone has a copy of the app signed by another PC. Uninstall it first (this deletes its saves), then run again.'
 } else {

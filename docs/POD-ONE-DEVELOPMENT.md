@@ -10,16 +10,14 @@
 
 ### Launcher
 
-- The local test pack installs **exactly** the user-approved 1672×941 launcher reference as `drawable-nodpi/pod_one_launcher_reference.png`. LauncherActivity renders that image directly with functional touch/gamepad hotspots. The preview's logo, typography, button silhouettes, artwork and colors are not redrawn or replaced.
-- Visual launcher buttons (as approved): Play Game, Settings, Save Management, Updates, Diagnostics and Quit. When there is no imported ROM, Play opens the ROM picker; when a ROM exists, pressing Y from the launcher permits re-importing it.
-- ROM selection, byte-order conversion, SHA-1 verification and the separated `:game` process are preserved.
-- The previous `pod_one_launcher_art.jpg` (original cover with the centered title) is superseded by `pod_one_launcher_reference.png` for local builds. The original public-source vector fallback remains when the private screenshot is absent. **Do not commit copyrighted game artwork.**
-- Approved icon is the **unchanged** `Star Wars Racer Pod One Icon(1).png` the user supplied, scaled uniformly and inset within a 432px Android adaptive foreground's circular safe area. The private install pack provides `pod_one_icon_foreground.png`, `pod_one_icon_background.png` and the adaptive icon XML. Gradle selects `@mipmap/pod_one_adaptive` when installed; otherwise uses the public vector fallback. Old `pod_one_approved_icon.png` and `ic_launcher_foreground.png` test assets must be deleted.
-- With the private image installed, the approved screen itself defines the launcher layout. Controller focus highlights the corresponding image hitbox; no platform Buttons are drawn over the artwork. The private pack has a built-in version-badge correction displaying the installed development version instead of the reference's illustrative release label.
+- The optional private art pack installs the approved 1672 × 941 launcher background with the ™ beside RACER removed. The background is a separate drawable at `drawable-nodpi/pod_one_launcher_background.png`. Public-source builds use the included vector backdrop.
+- The launcher has five independently rendered buttons: ROM Selection / Play Game, Settings, Updates, Diagnostics and Quit. ROM Selection opens the Android picker. A verified import updates the button to Play Game. Press Y or tap Change ROM to replace an existing selection.
+- ROM byte-order conversion, SHA-1 verification and the separate `:game` process are preserved. Android Back and controller B are handled separately; B remains available for in-game braking and settings navigation.
+- The private asset pack includes the approved round icon with its gold rim and a 64 dp foreground badge. Gradle selects the local adaptive icon when its resource is installed.
 
 ### In-game FrostFrontend
 
-- Replaces `RacerMenu`; old menu implementation removed. The right-hand FrostFrontend settings layout reproduces the approved dark navy/gold screenshot with the selected-item description card and controller footer.
+- Replaces `RacerMenu`; old menu implementation removed. FrostFrontend uses the approved navy/gold layout with a proportional sidebar, aligned setting values and a selected-item description panel.
 - Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates, Diagnostics, About. The latter two offer real own-app log sharing and port credits; no fake renderer/driver settings are added.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
 - Gamepad Select/Menu opens settings. The original Start button is reserved for Racer.
@@ -42,20 +40,22 @@
 - FrostSpeakerTest is available in Sound.
 - Physical gamepad bindings saved via FrostButtonMapper and forwarded to SDL N64 button bits.
 - Left stick steering and right stick C-camera input remain unchanged.
-- D-pad and Start remain fixed. Mappable actions: A, B, Z, R, C-Up/Down/Left/Right.
+- D-pad and Start remain fixed. Mappable actions include Drift (Z) and four named C-button actions. The existing mapping IDs are preserved.
 - Mapping conflicts are handled in FrostFrontend; bindings are reapplied on game focus.
 
 ### Touch and saves
 
 - Existing touch pad is retained; the `≡` menu control can now be moved/resized in the touch editor and persists across launches.
 - The touch controls may be hidden without hiding the menu control.
-- Launcher save management: export, import with backup and confirmation, delete with confirmation.
-- In-game Save Management directs the user back to launcher before importing/deleting to avoid corrupting an active save. No save states.
+- From the launcher, Settings → Save Management opens export, import with backup and confirmation, and delete.
+- In-game Save Management directs the user to launcher settings after quitting the current game so an active save can close safely.
 - Ensure the actual save path and imported format are validated against a real save on Odin.
 
 ### Graphics driver and diagnostics
 
-- **Graphics Driver Selection** opens Android Developer Options for devices supporting per-app driver selection. This is a real OS shortcut, **not** custom Turnip driver loading. Custom drivers require a separately verified loader, such as AdrenoTools, before RT64 initializes.
+- Stereo Speaker Test is in Diagnostics on both the launcher and settings screens.
+
+- Graphics → Graphics Driver explains the system Vulkan driver and offers an explicit Developer Options shortcut. Availability of per-app preferences depends on the device.
 - **Share Startup Log** appears in Graphics and launcher Diagnostics, sharing Android device/build information plus up to 1,000 app-readable logcat lines. Modern Android restricts logcat to the calling app's available records. Review logs before sharing.
 
 ### Updates

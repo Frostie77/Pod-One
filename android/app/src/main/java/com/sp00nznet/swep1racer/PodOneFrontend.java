@@ -3,13 +3,11 @@ package com.sp00nznet.swep1racer;
 import android.content.SharedPreferences;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.widget.Toast;
 
 import io.github.frostfrontend.FrostButtonMapper;
 import io.github.frostfrontend.FrostFrontendView;
 import io.github.frostfrontend.FrostSpeakerTest;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -34,26 +32,12 @@ final class PodOneFrontend {
     private static final String[] REFRESH_NAMES = {"Original", "Display refresh", "Manual (60 Hz)"};
     private static final String[] SIZE_NAMES = {"Small", "Medium", "Large"};
 
-    private static final String[] ACTION_IDS = {
-        "accelerate", "brake", "slide", "repair", "camera_up", "camera_down", "camera_left", "camera_right"
-    };
-    private static final List<FrostButtonMapper.Action> ACTIONS = Arrays.asList(
-        new FrostButtonMapper.Action("accelerate", "Accelerate (N64 A)", KeyEvent.KEYCODE_BUTTON_A),
-        new FrostButtonMapper.Action("brake", "Brake (N64 B)", KeyEvent.KEYCODE_BUTTON_B),
-        new FrostButtonMapper.Action("slide", "Slide (N64 Z)", KeyEvent.KEYCODE_BUTTON_L2),
-        new FrostButtonMapper.Action("repair", "Repair (N64 R)", KeyEvent.KEYCODE_BUTTON_R1),
-        new FrostButtonMapper.Action("camera_up", "Camera / C-Up", KeyEvent.KEYCODE_BUTTON_Y),
-        new FrostButtonMapper.Action("camera_down", "Camera / C-Down", KeyEvent.KEYCODE_BUTTON_THUMBL),
-        new FrostButtonMapper.Action("camera_left", "Camera / C-Left", KeyEvent.KEYCODE_BUTTON_X),
-        new FrostButtonMapper.Action("camera_right", "Camera / C-Right", KeyEvent.KEYCODE_BUTTON_THUMBR)
-    );
-
     private final SWE1RacerActivity activity;
     private final TouchPadView pad;
     private final SharedPreferences prefs;
     private final FrostFrontendView frontend;
     private final FrostSpeakerTest speaker = new FrostSpeakerTest();
-    private final FrostButtonMapper mapper = new FrostButtonMapper(ACTIONS);
+    private final FrostButtonMapper mapper = PodOneControls.newMapper();
     private boolean editingMappings;
 
     PodOneFrontend(SWE1RacerActivity activity, TouchPadView pad, SharedPreferences prefs) {
@@ -85,10 +69,11 @@ final class PodOneFrontend {
         frontend.setAdapter(new FrostFrontendView.Adapter() {
             @Override public List<FrostFrontendView.Item> itemsForTab(String tab) { return items(tab); }
             @Override public void onItemSelected(String tab, String id) { change(tab, id, 1); }
+            @Override public boolean isItemAdjustable(String tab, String id) {
+                return PodOneFrontend.isAdjustable(tab, id);
+            }
             @Override public void onItemAdjusted(String tab, String id, int direction) {
-                if (("graphics".equals(tab) && !id.equals("driver") && !id.equals("share_log")) || ("touch".equals(tab) && !"edit".equals(id))) {
-                    change(tab, id, direction);
-                }
+                change(tab, id, direction);
             }
             @Override public void onVisibilityChanged(boolean visible) {
                 pad.releaseAll();
@@ -109,10 +94,15 @@ final class PodOneFrontend {
     void reapplyMappings() { applyMappings(); }
 
     private void applyMappings() {
-        int[] keys = new int[ACTION_IDS.length];
-        for (int i = 0; i < keys.length; i++) keys[i] = mapper.buttonFor(ACTION_IDS[i]);
-        try { SWE1RacerActivity.nativeSetGamepadKeys(keys); }
+        try { SWE1RacerActivity.nativeSetGamepadKeys(PodOneControls.nativeKeys(mapper)); }
         catch (UnsatisfiedLinkError ignored) { }
+    }
+
+    static boolean isAdjustable(String tab, String id) {
+        if ("graphics".equals(tab))
+            return !("window".equals(id) || "driver".equals(id) || "share_log".equals(id));
+        return "touch".equals(tab) && ("pad".equals(id) || "boost".equals(id)
+                || "size".equals(id) || "opacity".equals(id));
     }
 
     private int index(String key, int fallback, int count) {
@@ -145,18 +135,16 @@ final class PodOneFrontend {
                     item("filter", "Texture Filtering", FILTER_NAMES[index(FILTER, DEF_FILTER, 2)],
                          "Sharp or smooth output filtering"),
                     item("driver", "Graphics Driver", "System default",
-                         "Opens Android's per-app driver settings; custom drivers are not installed"),
+                         "View information about Android’s system Vulkan driver"),
                     item("share_log", "Share Startup Log", "",
                          "Share available app logs and Android device information"),
                     item("fps", "Show FPS Counter", enabled(FPS, false),
                          "Show gameplay frames per second")
                 );
             case "sound":
-                return Arrays.asList(
-                    item("speaker", "Speaker Test", "", "Play left, right and both channels"),
+                return Collections.singletonList(
                     item("latency", "Audio Buffer", "Low-latency experimental",
-                         "512-sample SDL buffer; listen for crackle during tests")
-                );
+                         "512-sample SDL buffer; listen for crackle during tests"));
             case "controls":
                 if (!editingMappings) return Arrays.asList(
                     item("mapping", "Physical Button Mapping", "", "Remap gamepad buttons and triggers"),
@@ -164,16 +152,7 @@ final class PodOneFrontend {
                     item("camera", "Camera", "Right analogue stick", "C-direction input is retained"),
                     item("menu_key", "Open Menu", "Select or touchscreen icon", "Start remains the game's pause button")
                 );
-                List<FrostFrontendView.Item> rows = new ArrayList<>();
-                rows.add(item("map_back", "Back to Controls", "", ""));
-                for (FrostButtonMapper.Action a : mapper.actions()) {
-                    final int code = mapper.buttonFor(a.id);
-                    rows.add(new FrostFrontendView.Item("map:" + a.id, a.name,
-                            FrostButtonMapper.buttonName(code), "",
-                            code == FrostButtonMapper.UNMAPPED));
-                }
-                rows.add(item("reset_mapping", "Restore Default Bindings", "", ""));
-                return rows;
+                return PodOneControls.mappingRows(mapper);
             case "touch":
                 return Arrays.asList(
                     item("pad", "Show Touch Controls", enabled(PAD, true), "Menu icon remains visible"),
@@ -184,7 +163,7 @@ final class PodOneFrontend {
                 );
             case "saves":
                 return Collections.singletonList(item("save_manager", "Manage Racer Saves", "",
-                       "Export, import or delete with confirmation (return to launcher for changes)"));
+                       "Open Settings from the launcher to manage saves after quitting the game"));
             case "updates":
                 return Collections.singletonList(item("check", "Check for Updates", "",
                        "Query Pod One's published GitHub releases, if available"));
@@ -192,8 +171,8 @@ final class PodOneFrontend {
                 return Arrays.asList(
                     item("share_log", "Share Startup Log", "",
                          "Share available app logcat records and device summary"),
-                    item("driver", "Android Driver Preferences", "",
-                         "Open supported Android per-app driver settings")
+                    item("speaker", "Stereo Speaker Test", "",
+                         "Play a tone on the left, right, then both speakers")
                 );
             case "about":
                 return Collections.singletonList(item("credits", "About Pod One", "",
@@ -203,12 +182,16 @@ final class PodOneFrontend {
     }
 
     private void change(String tab, String id, int delta) {
-        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "driver".equals(id)) {
-            PodOneDiagnostics.openDriverPreferences(activity);
+        if ("graphics".equals(tab) && "driver".equals(id)) {
+            PodOneDiagnostics.showGraphicsDriver(activity);
             return;
         }
         if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "share_log".equals(id)) {
             PodOneDiagnostics.shareStartupLog(activity);
+            return;
+        }
+        if ("diagnostics".equals(tab) && "speaker".equals(id)) {
+            PodOneDiagnostics.playSpeakerTest(activity, speaker);
             return;
         }
         if ("about".equals(tab) && "credits".equals(id)) {
@@ -218,11 +201,7 @@ final class PodOneFrontend {
                     .setPositiveButton("OK", null).show();
             return;
         }
-        if ("sound".equals(tab)) {
-            if ("speaker".equals(id) && speaker.start())
-                Toast.makeText(activity, "Speaker test: left, right, both", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        if ("sound".equals(tab)) return;
         if ("saves".equals(tab)) {
             if ("save_manager".equals(id)) activity.showSaveManagerInfo();
             return;

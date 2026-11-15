@@ -149,6 +149,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     // Intercept physical controls before SDL receives them. Select opens the
     // frontend; Start remains the original game's pause button.
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (PodOneControls.isControllerBack(event)) return true;
         if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
         if (menu != null && (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_SELECT
                 || event.getKeyCode() == KeyEvent.KEYCODE_MENU)) {
@@ -180,7 +181,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     void showSaveManagerInfo() {
         new AlertDialog.Builder(this)
                 .setTitle("Save Management")
-                .setMessage("To import or delete a save safely, quit the current game and use Save Management in the Pod One launcher. Export is available there too.")
+                .setMessage("Quit the game, then open Settings → Save Management from the launcher to export, restore or delete a save.")
                 .setPositiveButton("OK", null)
                 .show();
     }
