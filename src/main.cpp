@@ -69,6 +69,10 @@ extern void swe1r_queue_samples(int16_t* samples, size_t num_samples);
 extern size_t swe1r_get_frames_remaining();
 extern void swe1r_set_frequency(uint32_t freq);
 
+#if defined(__ANDROID__)
+void podone_pause_guest(bool paused);
+#endif
+
 // RDRAM base — captured in on_game_init so the crash handler can translate
 // native fault addresses back into N64 virtual addresses.
 static uint8_t* g_rdram_base = nullptr;
@@ -428,7 +432,6 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetTouchPad(JNIEnv*, jclas
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetFrontendOpen(JNIEnv*, jclass, jboolean open) {
-    extern void podone_pause_guest(bool paused);
     g_frontend_open.store(open == JNI_TRUE);
     podone_pause_guest(open == JNI_TRUE);
 }
