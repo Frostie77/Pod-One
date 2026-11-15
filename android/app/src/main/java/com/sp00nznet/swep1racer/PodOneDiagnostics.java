@@ -1,11 +1,8 @@
 package com.sp00nznet.swep1racer;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.os.Build;
-import android.provider.Settings;
 import android.widget.Toast;
 
 import io.github.frostfrontend.FrostSpeakerTest;
@@ -50,22 +47,6 @@ final class PodOneDiagnostics {
             Toast.makeText(activity, "Speaker test: left, right, both", Toast.LENGTH_SHORT).show();
     }
 
-    static void showGraphicsDriver(Activity activity) {
-        new AlertDialog.Builder(activity)
-                .setTitle("Graphics Driver")
-                .setMessage("Pod One uses Android’s system Vulkan driver. A device that offers "
-                        + "per-app driver preferences lists them in Android Developer Options.")
-                .setPositiveButton("Done", null)
-                .setNeutralButton("Developer Options", (dialog, which) -> {
-                    try {
-                        activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
-                    } catch (ActivityNotFoundException | SecurityException error) {
-                        Toast.makeText(activity, "Developer Options are unavailable on this device.",
-                                Toast.LENGTH_LONG).show();
-                    }
-                }).show();
-    }
-
     private static String collect(Activity activity) {
         StringBuilder out = new StringBuilder();
         out.append("POD ONE — ANDROID STARTUP DIAGNOSTICS\n")
@@ -84,7 +65,7 @@ final class PodOneDiagnostics {
            .append(Build.MODEL).append("\n")
            .append("ABI: ").append(java.util.Arrays.toString(Build.SUPPORTED_ABIS))
            .append("\n")
-           .append("Renderer: RT64 / Vulkan (system selected driver)\n")
+           .append("Renderer: RT64 / Vulkan\n")
            .append("Logcat below contains only records accessible to this app.\n")
            .append("Review before sharing: logs can contain file paths or device identifiers.\n\n");
         Process proc = null;

@@ -20,32 +20,31 @@
 - Replaces `RacerMenu`; old menu implementation removed. FrostFrontend uses the approved navy/gold layout with a proportional sidebar, aligned setting values and a selected-item description panel.
 - Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates, Diagnostics, About. The latter two offer real own-app log sharing and port credits; no fake renderer/driver settings are added.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
-- Gamepad Select/Menu opens settings. The original Start button is reserved for Racer.
+- Start opens FrostFrontend during a race. The original Start input remains available in the game’s title and menus. Select and the touch menu button can open the frontend at any time.
 - The shared FrostFrontend test submodule now has the preview-inspired **left-hand sidebar** and **right settings panel**. Changes remain on the shared library feature branch until device testing.
-- Gamepad inputs are suppressed during the settings overlay to avoid accidentally controlling the vehicle while navigating.
-- Important: the original game's race simulation is **not yet paused** while FrostFrontend is open. Pause with Start first in the current test build.
+- While FrostFrontend or its touch editor is open, Pod One pauses the VI scheduler and excludes the elapsed pause from the guest clock. The D-pad and left stick move between the sidebar and options. A selects or cycles forward, and X cycles a setting backward.
 
 ### Graphics / RT64
 
-- Original 4:3, Expand 16:9, Expand 16:10, Expand 3:2, Expand 21:9, and **Expand to Screen** (dynamic RT64 viewport, without stretching). RT64 Manual aspect target is used, not image stretching.
+- Original (4:3), Fixed (16:9), Fixed (16:10), Fixed (3:2), Fixed (21:9), and Expand to Screen. Expand to Screen fits the drawn portion of Racer’s VI image inside the full RT64 viewport.
 - 1x, 2x, 3x, Fit rendering; Sharp/Smooth scaling.
 - MSAA Off/2x/4x; downsampling Off/2x/3x; output refresh Original/Display/Manual 60.
 - Android Window Mode is fullscreen only; the menu shows the actual supported mode instead of offering a nonworking windowed toggle.
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
-- **HUD placement is not fixed.** The original N64 HUD may remain centred around 4:3. We deliberately did not patch arbitrary display-list rectangles or ROM addresses without a capture; later test the lap/time/position/minimap/speed readouts at all six ratios.
+- The existing RT64 rectangle correction maintains HUD width. Per-element HUD anchoring and scenery culling need matching race captures across the aspect modes.
 
 ### Sound and input
 
 - SDL audio buffer reduced from 1024 to 512 samples; queued-audio cap now scales with device frequency to approximately 125 ms. Test for improvement and crackle.
-- FrostSpeakerTest is available in Sound.
+- Stereo Speaker Test is available in Diagnostics.
 - Physical gamepad bindings saved via FrostButtonMapper and forwarded to SDL N64 button bits.
 - Left stick steering and right stick C-camera input remain unchanged.
-- D-pad and Start remain fixed. Mappable actions include Drift (Z) and four named C-button actions. The existing mapping IDs are preserved.
+- D-pad bindings remain fixed. Mappable actions include Drift (Z) and four named C-button actions. The existing mapping IDs are preserved.
 - Mapping conflicts are handled in FrostFrontend; bindings are reapplied on game focus.
 
 ### Touch and saves
 
-- Existing touch pad is retained; the `≡` menu control can now be moved/resized in the touch editor and persists across launches.
+- Edit Touch Layout is available from launcher settings and during a race. The navy/gold touch menu button defaults to the lower-left corner. A position the player saved is carried forward.
 - The touch controls may be hidden without hiding the menu control.
 - From the launcher, Settings → Save Management opens export, import with backup and confirmation, and delete.
 - In-game Save Management directs the user to launcher settings after quitting the current game so an active save can close safely.
@@ -55,8 +54,8 @@
 
 - Stereo Speaker Test is in Diagnostics on both the launcher and settings screens.
 
-- Graphics → Graphics Driver explains the system Vulkan driver and offers an explicit Developer Options shortcut. Availability of per-app preferences depends on the device.
-- **Share Startup Log** appears in Graphics and launcher Diagnostics, sharing Android device/build information plus up to 1,000 app-readable logcat lines. Modern Android restricts logcat to the calling app's available records. Review logs before sharing.
+- Graphics → Graphics Driver imports compatible Arm64 Adreno packages from a local ZIP with a root `meta.json` and its named Vulkan library. Driver changes take effect at the next game launch. Use System Driver is available in the same menu.
+- **Share Startup Log** appears in Diagnostics, sharing Android device/build information plus up to 1,000 app-readable logcat lines. Modern Android restricts logcat to the calling app's available records. Review logs before sharing.
 
 ### Updates
 
@@ -68,7 +67,7 @@
 
 1. Fetch the feature branch and initialize all submodules. Confirm the original game still boots, plays, saves and has correct audio.
 2. Install the personal artwork pack in `drawable-nodpi`, then build. Compare the icon and launcher to the approved designs.
-3. Verify pre-game settings and in-game six-tab FrostFrontend with touch, D-pad, A/B and shoulder tab navigation.
+3. Verify launcher and in-game settings with both D-pad and left stick. During a race use Start, wait several seconds, and check the race timer after resuming.
 4. Rebind Accelerator/Brake/Z/R, restart the game, verify persistence. Confirm steering and camera sticks do not change.
 5. Move the touch menu icon; hide touch buttons; reopen settings; restart and confirm icon position persisted.
 6. Test all six aspect ratios, including 16:10 for the Odin 2 Portal, in menus and during a race. Record HUD defects.
@@ -80,7 +79,7 @@
 ## Known outstanding items
 
 - Actual HUD anchoring across expanded ratios; requires GPU/display-list capture and N64 overlay grouping.
-- Real pause/resume for settings overlay, rather than just suppressing inputs.
+- On-device verification of paused race timing and the selected Vulkan driver. A successful ZIP import confirms package validation. The game-start log records the actual Vulkan device and driver.
 - ROM-independent public build/release verification: needs Windows/Android SDK/ROM-included local build, **not** a GitHub public artifact containing game code.
 - Pod One currently pins a redesigned shared FrostFrontend **feature branch**. Shared `main` remains unchanged until it passes regression tests against the existing Android ports. Additional BlastDroid improvements should be reviewed for compatibility before merging.
 - Verify full launcher save path and gamepad handling on the Odin 2 Portal.
@@ -98,7 +97,7 @@
 - The **only** icon reference is the user's `Star Wars Racer Pod One Icon(1).png` (silver STAR WARS logo, gold RACER, silver POD ONE, two gold engine pods and magenta binder). No redesign or alternate icon generation.
 - Android's round adaptive mask would crop the original full-bleed image; the private pack inserts the exact image into its safe inset, backed by blue. It also bumps the app development version so launcher icon caches can refresh. No app uninstall is necessary.
 - Shared FrostFrontend's approved screenshot provides a left sidebar, right selectable rows with value arrows, explanation panel and controller prompts. It stays on `FrostFrontend/feature/pod-one-sidebar` and is pinned through Pod One's test submodule.
-- These changes have **not yet passed an Odin 2 Portal visual regression test**. No claims of fully corrected wide HUD or custom Turnip drivers are made.
+- These changes have **not yet passed an Odin 2 Portal visual regression test**. Verify the widescreen HUD and custom driver startup on hardware.
 
 ### Approved artwork lock — device fit test v3
 

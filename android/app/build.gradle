@@ -15,8 +15,8 @@ android {
         applicationId 'com.sp00nznet.swep1racer'
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName '0.1.3-dev'
+        versionCode 5
+        versionName '0.1.4-dev'
         manifestPlaceholders = [podOneIcon: approvedAdaptive.isFile()
                 ? '@mipmap/pod_one_adaptive' : '@mipmap/ic_launcher']
 
@@ -26,6 +26,7 @@ android {
 
         externalNativeBuild {
             cmake {
+                targets 'SWE1Racer', 'SDL2', 'main_hook', 'file_redirect_hook', 'gsl_alloc_hook', 'hook_impl'
                 // Android 2026-10-21 (Claude): native build type RelWithDebInfo (-O2, NDEBUG, symbols kept). The Mali
                 // shader-compiler crashes blamed on -O2 were really the 16K-EEPROM save overflowing the native heap
                 // (fixed in librecomp pi.cpp + main.cpp save_type). Debug (-O0) is 10x+ slower. (Last -D wins.)

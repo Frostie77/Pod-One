@@ -8,7 +8,7 @@
         android:label="Pod One"
         android:icon="${podOneIcon}"
         android:roundIcon="${podOneIcon}"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/PodOneTheme">
         <!-- Start screen: pick the ROM, then Play (2026-10-21). -->
         <activity
             android:name=".LauncherActivity"

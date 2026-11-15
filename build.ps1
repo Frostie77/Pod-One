@@ -62,6 +62,10 @@ if (-not (Test-Path -LiteralPath 'lib\N64ModernRuntime\N64Recomp\CMakeLists.txt'
     -not (Test-Path -LiteralPath 'lib\rt64\CMakeLists.txt') -or -not (Test-Path -LiteralPath 'lib\SDL2\CMakeLists.txt')) {
     Fail "the libraries in lib\ are missing. Run: git submodule update --init --recursive"
 }
+if (-not (Test-Path -LiteralPath 'lib\adrenotools\lib\linkernsbypass\CMakeLists.txt')) {
+    & git submodule update --init --recursive -- lib/adrenotools
+    if ($LASTEXITCODE -ne 0) { Fail 'Could not initialize the pinned Android driver loader.' }
+}
 Ok 'libraries in lib\'
 
 $python = Get-Command python -ErrorAction SilentlyContinue

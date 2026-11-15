@@ -38,6 +38,7 @@ public final class SWE1RacerActivity extends SDLActivity {
                                       int msaa, int downsample, int refresh);
     static native void nativeSetFrontendOpen(boolean open);
     static native void nativeSetGamepadKeys(int[] androidKeycodes);
+    static native boolean nativeHasLocalRacer();
     static native float nativeGameFps();
     static native float nativeDisplayListRate();
     static native int nativeBoostState();      // 0 not ready, 1 charging, 2 ready, -1 no local racer
@@ -47,6 +48,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     private TouchPadView pad;
     private PodOneFrontend menu;
     private TextView fpsView;
+    private boolean frontendStartDown;
     private final Runnable fpsTick = new Runnable() {
         @Override
         public void run() {
@@ -57,6 +59,15 @@ public final class SWE1RacerActivity extends SDLActivity {
             }
         }
     };
+
+    @Override protected String[] getArguments() {
+        return new String[] {getApplicationInfo().nativeLibraryDir, getCacheDir().getAbsolutePath()};
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (menu != null) menu.drivers().onActivityResult(request, result, data);
+    }
 
     @Override
     protected String[] getLibraries() {
@@ -76,6 +87,7 @@ public final class SWE1RacerActivity extends SDLActivity {
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         prefs = getSharedPreferences(PodOneFrontend.PREFS, MODE_PRIVATE);
         if (mLayout != null) {
+            mLayout.setDefaultFocusHighlightEnabled(false);
             pad = new TouchPadView(this);
             mLayout.addView(pad, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -146,17 +158,25 @@ public final class SWE1RacerActivity extends SDLActivity {
         }
     }
 
-    // Intercept physical controls before SDL receives them. Select opens the
-    // frontend; Start remains the original game's pause button.
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (PodOneControls.isControllerBack(event)) return true;
-        if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
-        if (menu != null && (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_SELECT
-                || event.getKeyCode() == KeyEvent.KEYCODE_MENU)) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) menu.open();
+        if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
+        final int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_BUTTON_START && frontendStartDown) {
+            if (event.getAction() == KeyEvent.ACTION_UP) frontendStartDown = false;
             return true;
         }
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+        if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
+        if (menu != null && (code == KeyEvent.KEYCODE_BUTTON_SELECT
+                || code == KeyEvent.KEYCODE_MENU
+                || (code == KeyEvent.KEYCODE_BUTTON_START && nativeHasLocalRacer()))) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                frontendStartDown = code == KeyEvent.KEYCODE_BUTTON_START;
+                menu.open();
+            }
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_BACK) {
             if (event.getAction() == KeyEvent.ACTION_UP) onBackPressed();
             return true;
         }
@@ -164,13 +184,14 @@ public final class SWE1RacerActivity extends SDLActivity {
     }
 
     @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (pad != null && pad.isEditing()) return true;
         if (menu != null && menu.isOpen() && menu.handleGenericMotionEvent(event)) return true;
         return super.dispatchGenericMotionEvent(event);
     }
 
     @Override public void onBackPressed() {
         if (pad != null && pad.isEditing()) {
-            pad.stopEditing();
+            pad.finishEditing(false);
         } else if (menu != null && menu.isOpen()) {
             menu.back();
         } else {
@@ -197,7 +218,10 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacks(fpsTick);
-        if (menu != null) menu.destroy();
+        if (menu != null) {
+            menu.destroy();
+            nativeSetFrontendOpen(false);
+        }
         super.onDestroy();
         // SDL and the recompiled game cannot be restarted in this process; end it so the next Play starts clean.
         // Not inside onDestroy itself: Android has not recorded the finish yet, sees the process die and starts the

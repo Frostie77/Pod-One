@@ -3,6 +3,7 @@ package com.sp00nznet.swep1racer;
 import android.content.SharedPreferences;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 
 import io.github.frostfrontend.FrostButtonMapper;
 import io.github.frostfrontend.FrostFrontendView;
@@ -22,8 +23,8 @@ final class PodOneFrontend {
     static final int[] OPACITIES = {100, 75, 50, 30};
     static final float[] SIZES = {0.85f, 1.0f, 1.2f};
 
-    private static final String[] ASPECT_NAMES = {
-        "Original (4:3)", "Expand (16:9)", "Expand (16:10)", "Expand (3:2)", "Expand (21:9)", "Expand to Screen"
+    static final String[] ASPECT_NAMES = {
+        "Original (4:3)", "Fixed (16:9)", "Fixed (16:10)", "Fixed (3:2)", "Fixed (21:9)", "Expand to Screen"
     };
     private static final String[] FILTER_NAMES = {"Sharp", "Smooth"};
     private static final String[] SCALE_NAMES = {"1x", "2x", "3x", "Fit"};
@@ -36,6 +37,7 @@ final class PodOneFrontend {
     private final TouchPadView pad;
     private final SharedPreferences prefs;
     private final FrostFrontendView frontend;
+    private final PodOneDrivers drivers;
     private final FrostSpeakerTest speaker = new FrostSpeakerTest();
     private final FrostButtonMapper mapper = PodOneControls.newMapper();
     private boolean editingMappings;
@@ -54,6 +56,7 @@ final class PodOneFrontend {
         applyMappings();
 
         frontend = new FrostFrontendView(activity);
+        drivers = new PodOneDrivers(activity, true, frontend::refresh);
         frontend.setTabs(Arrays.asList(
             new FrostFrontendView.Tab("graphics", "Graphics"),
             new FrostFrontendView.Tab("sound", "Sound"),
@@ -85,6 +88,7 @@ final class PodOneFrontend {
     }
 
     FrostFrontendView view() { return frontend; }
+    PodOneDrivers drivers() { return drivers; }
     boolean isOpen() { return frontend.isOpen(); }
     void open() { pad.releaseAll(); frontend.open(); }
     void back() { frontend.back(); }
@@ -100,7 +104,7 @@ final class PodOneFrontend {
 
     static boolean isAdjustable(String tab, String id) {
         if ("graphics".equals(tab))
-            return !("window".equals(id) || "driver".equals(id) || "share_log".equals(id));
+            return !("window".equals(id) || "driver".equals(id));
         return "touch".equals(tab) && ("pad".equals(id) || "boost".equals(id)
                 || "size".equals(id) || "opacity".equals(id));
     }
@@ -134,10 +138,8 @@ final class PodOneFrontend {
                          "Off, 2x or 4x anti-aliasing; requires Odin compatibility testing"),
                     item("filter", "Texture Filtering", FILTER_NAMES[index(FILTER, DEF_FILTER, 2)],
                          "Sharp or smooth output filtering"),
-                    item("driver", "Graphics Driver", "System default",
-                         "View information about Android’s system Vulkan driver"),
-                    item("share_log", "Share Startup Log", "",
-                         "Share available app logs and Android device information"),
+                    item("driver", "Graphics Driver", drivers.selectedName(),
+                         "Import an Adreno driver ZIP or choose the system Vulkan driver"),
                     item("fps", "Show FPS Counter", enabled(FPS, false),
                          "Show gameplay frames per second")
                 );
@@ -150,7 +152,7 @@ final class PodOneFrontend {
                     item("mapping", "Physical Button Mapping", "", "Remap gamepad buttons and triggers"),
                     item("analog", "Steering", "Left analogue stick", "Original analogue steering is unchanged"),
                     item("camera", "Camera", "Right analogue stick", "C-direction input is retained"),
-                    item("menu_key", "Open Menu", "Select or touchscreen icon", "Start remains the game's pause button")
+                    item("menu_key", "Open Menu", "Start / Select", "Start opens and pauses during a race. Select or tap the menu icon anytime.")
                 );
                 return PodOneControls.mappingRows(mapper);
             case "touch":
@@ -159,7 +161,7 @@ final class PodOneFrontend {
                     item("boost", "BOOST Button", enabled(BOOST, true), ""),
                     item("size", "Control Size", SIZE_NAMES[index(SIZE, DEF_SIZE, 3)], ""),
                     item("opacity", "Control Opacity", OPACITIES[index(OPACITY, DEF_OPACITY, 4)] + "%", ""),
-                    item("edit", "Move and Resize Controls", "", "Includes the menu icon; save to persist")
+                    item("edit", "Edit Touch Layout", "", "Move and resize touch controls and the menu button")
                 );
             case "saves":
                 return Collections.singletonList(item("save_manager", "Manage Racer Saves", "",
@@ -183,10 +185,10 @@ final class PodOneFrontend {
 
     private void change(String tab, String id, int delta) {
         if ("graphics".equals(tab) && "driver".equals(id)) {
-            PodOneDiagnostics.showGraphicsDriver(activity);
+            drivers.show();
             return;
         }
-        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "share_log".equals(id)) {
+        if ("diagnostics".equals(tab) && "share_log".equals(id)) {
             PodOneDiagnostics.shareStartupLog(activity);
             return;
         }
@@ -237,8 +239,11 @@ final class PodOneFrontend {
             return;
         }
         if ("touch".equals(tab) && "edit".equals(id)) {
-            frontend.close();
-            pad.startEditing();
+            frontend.setVisibility(View.GONE);
+            pad.startEditing(() -> {
+                frontend.setVisibility(View.VISIBLE);
+                frontend.requestFocus();
+            });
             return;
         }
         final SharedPreferences.Editor e = prefs.edit();

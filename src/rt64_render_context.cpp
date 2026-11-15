@@ -13,6 +13,8 @@
 #include <string>
 #if defined(__ANDROID__)
 #include <sys/system_properties.h>
+void podone_set_fill_screen(bool);
+bool podone_vulkan_fallback();
 #endif
 
 #include "ultramodern/renderer_context.hpp"
@@ -152,6 +154,13 @@ public:
         auto result = app_->setup(window_handle.thread_id);
 #else
         auto result = app_->setup(SDL_ThreadID());
+#if defined(__ANDROID__)
+        if (result != RT64::Application::SetupResult::Success && podone_vulkan_fallback()) {
+            app_.reset();
+            app_ = std::make_unique<RT64::Application>(core, app_config);
+            result = app_->setup(SDL_ThreadID());
+        }
+#endif
 #endif
 
         switch (result) {
@@ -312,6 +321,9 @@ public:
         RT64::UserConfiguration& cfg = app_->userConfig;
         int aspect = g_video_aspect.load();
         const int filter = g_video_filter.load(), resolution = g_video_resolution.load();
+#if defined(__ANDROID__)
+        podone_set_fill_screen(aspect == 5);
+#endif
         if (aspect == 0) {
             cfg.aspectRatio = RT64::UserConfiguration::AspectRatio::Original;
         } else if (aspect == 5) {

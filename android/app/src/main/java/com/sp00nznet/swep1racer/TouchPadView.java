@@ -15,6 +15,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.view.MotionEvent;
+import android.view.KeyEvent;
 import android.view.View;
 
 import java.util.Locale;
@@ -52,7 +53,8 @@ public final class TouchPadView extends View {
 
     private static final float TOGGLE_R = 0.045f;
     private static final int MENU_CONTROL = CONTROLS;
-    private float menuX = 0.50f, menuY = 0.06f, menuScale = 1.0f;
+    private static final float DEFAULT_MENU_X = 0.045f, DEFAULT_MENU_Y = 0.91f;
+    private float menuX = DEFAULT_MENU_X, menuY = DEFAULT_MENU_Y, menuScale = 1.0f;
     private static final int ACCENT = 0xFF8AB4FF;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -110,6 +112,7 @@ public final class TouchPadView extends View {
 
     // Editing mode
     private boolean editing = false;
+    private Runnable onEditingFinished;
     private int selected = -1;                // the control the editing tools act on
     private int dragging = -1, dragPointer = -1;
     private float dragDx, dragDy;             // finger offset from the control's centre (pixels)
@@ -135,6 +138,7 @@ public final class TouchPadView extends View {
     /** Loads the saved layout ("x,y,scale" per control, ';' between controls); missing or bad = default. */
     void loadLayout(SharedPreferences p) {
         prefs = p;
+        resetLayout();
         final String menu = p.getString(MENU_LAYOUT, "");
         try {
             String[] v = menu.split(",");
@@ -142,6 +146,11 @@ public final class TouchPadView extends View {
                 menuX = clampf(Float.parseFloat(v[0]), 0.04f, 0.96f);
                 menuY = clampf(Float.parseFloat(v[1]), 0.05f, 0.95f);
                 menuScale = clampf(Float.parseFloat(v[2]), 0.65f, 1.8f);
+                // The old default was saved even when the menu position was never moved.
+                if (menuX == 0.50f && menuY == 0.06f && menuScale == 1f) {
+                    menuX = DEFAULT_MENU_X;
+                    menuY = DEFAULT_MENU_Y;
+                }
             }
         } catch (NumberFormatException ignored) { }
         final String s = p.getString(LAYOUT, null);
@@ -173,9 +182,9 @@ public final class TouchPadView extends View {
                     menuX, menuY, menuScale)).apply();
     }
 
-    /** Editing mode on: drag controls, resize the selected one; the game gets no input meanwhile. */
-    void startEditing() {
+    void startEditing(Runnable onFinished) {
         releaseAll();
+        onEditingFinished = onFinished;
         editing = true;
         selected = -1;
         invalidate();
@@ -183,12 +192,37 @@ public final class TouchPadView extends View {
 
     boolean isEditing() { return editing; }
 
-    void stopEditing() {
+    boolean handleEditorKey(KeyEvent event) {
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_START) finishEditing(true);
+            else if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_B || event.getKeyCode() == KeyEvent.KEYCODE_BACK)
+                finishEditing(false);
+        }
+        return true;
+    }
+
+    void finishEditing(boolean save) {
+        if (!editing) return;
         editing = false;
         dragging = -1;
         selected = -1;
-        saveLayout();
+        if (save) saveLayout();
+        else if (prefs != null) loadLayout(prefs);
+        Runnable finished = onEditingFinished;
+        onEditingFinished = null;
+        if (finished != null) finished.run();
         invalidate();
+    }
+
+    private void resetLayout() {
+        for (int i = 0; i < CONTROLS; i++) {
+            cx[i] = DEF_X[i];
+            cy[i] = DEF_Y[i];
+            cscale[i] = 1f;
+        }
+        menuX = DEFAULT_MENU_X;
+        menuY = DEFAULT_MENU_Y;
+        menuScale = 1f;
     }
 
     /** Lets go of everything (menu opened, pad hidden): the game sees no button and a centred stick. */
@@ -385,16 +419,11 @@ public final class TouchPadView extends View {
                 else if (selected >= 0) cscale[selected] = clampf(cscale[selected] * 1.12f, 0.5f, 2.0f);
                 break;
             case 2: // Reset: everything back to the default layout
-                for (int i = 0; i < CONTROLS; i++) {
-                    cx[i] = DEF_X[i];
-                    cy[i] = DEF_Y[i];
-                    cscale[i] = 1f;
-                }
-                menuX = 0.50f; menuY = 0.06f; menuScale = 1.0f;
+                resetLayout();
                 selected = -1;
                 break;
             default: // Done
-                stopEditing();
+                finishEditing(true);
                 return;
         }
         invalidate();
@@ -442,21 +471,9 @@ public final class TouchPadView extends View {
     @Override
     protected void onDraw(Canvas c) {
         float hh = h();
-        // Menu icon remains visible and selectable during layout editing.
-        {
-            fill.setColor(0x55000000);
-            c.drawCircle(menuX * w(), menuY * hh, TOGGLE_R * menuScale * hh, fill);
-            c.drawCircle(menuX * w(), menuY * hh, TOGGLE_R * menuScale * hh, stroke);
-            text.setTextSize(hh * 0.05f);
-            c.drawText("≡", menuX * w(), menuY * hh + hh * 0.017f, text);
-        }
-        text.setTextSize(hh * 0.035f);
-        if (!visible && !editing) {
-            return;
-        }
-        if (editing) {
-            c.drawColor(0x66000000);
-        }
+        if (editing) c.drawColor(0x66000000);
+        drawMenuButton(c);
+        if (!visible && !editing) return;
         final int layer = c.saveLayerAlpha(0, 0, w(), hh, editing ? 255 : Math.round(255 * opacity));
         // stick
         float r = pr(STICK);
@@ -488,6 +505,24 @@ public final class TouchPadView extends View {
         if (editing) {
             drawEditTools(c, hh);
         }
+    }
+
+    private void drawMenuButton(Canvas canvas) {
+        float x = menuX * w(), y = menuY * h();
+        float r = TOGGLE_R * menuScale * h();
+        fill.setColor(0xF20D2945);
+        canvas.drawRoundRect(x - r, y - r, x + r, y + r, r * .32f, r * .32f, fill);
+        int color = stroke.getColor();
+        float width = stroke.getStrokeWidth();
+        stroke.setColor(0xFFFFC15C);
+        stroke.setStrokeWidth(Math.max(2f, r * .085f));
+        canvas.drawRoundRect(x - r, y - r, x + r, y + r, r * .32f, r * .32f, stroke);
+        for (int i = 0; i < 3; i++) {
+            float lineY = y + (i - 1) * r * .32f;
+            canvas.drawLine(x - .46f * r, lineY, x + .46f * r, lineY, stroke);
+        }
+        stroke.setColor(color);
+        stroke.setStrokeWidth(width);
     }
 
     private void drawEditTools(Canvas c, float hh) {

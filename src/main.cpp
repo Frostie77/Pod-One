@@ -428,7 +428,9 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetTouchPad(JNIEnv*, jclas
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetFrontendOpen(JNIEnv*, jclass, jboolean open) {
+    extern void podone_pause_guest(bool paused);
     g_frontend_open.store(open == JNI_TRUE);
+    podone_pause_guest(open == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -444,20 +446,31 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetGamepadKeys(JNIEnv* env
 // +4 is 'Locl', and +0x84 points to the racer object ('Test', same layout as the PC version). In that object
 // +0x210 is the boost status: 0 not ready, 1 charging, 2 ready (written only by the boost-charge code, func_8006E454).
 // Returns -1 when there is no local racer (menus, attract demo) or a pointer looks wrong.
-extern "C" JNIEXPORT jint JNICALL
-Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeBoostState(JNIEnv*, jclass) {
+static uint32_t find_local_racer() {
     uint8_t* const rdram = g_rdram_base;
-    if (rdram == nullptr) return -1;
+    if (rdram == nullptr) return 0;
     auto read32 = [rdram](uint32_t addr) -> uint32_t {
         return *(volatile uint32_t*)(rdram + (addr - 0x80000000u));
     };
-    if (read32(0x80118F94) != 0x4C6F636Cu) return -1;            // 'Locl'
-    const uint32_t obj = read32(0x80119014);
-    if (obj < 0x80000400u || obj > 0x807FF000u || (obj & 3) != 0) return -1;
-    if (read32(obj) != 0x54657374u) return -1;                    // 'Test'
-    const uint32_t status = read32(obj + 0x210);
+    if (read32(0x80118F94) != 0x4C6F636Cu) return 0; // 'Locl'
+    const uint32_t object = read32(0x80119014);
+    if (object < 0x80000400u || object > 0x807FF000u || (object & 3) != 0) return 0;
+    return read32(object) == 0x54657374u ? object : 0; // 'Test'
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeHasLocalRacer(JNIEnv*, jclass) {
+    return find_local_racer() != 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeBoostState(JNIEnv*, jclass) {
+    const uint32_t object = find_local_racer();
+    if (object == 0) return -1;
+    const uint32_t status = *(volatile uint32_t*)(g_rdram_base + (object - 0x80000000u) + 0x210);
     return (status <= 2) ? (jint)status : -1;
 }
+
 #endif
 
 bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
@@ -974,6 +987,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     const std::filesystem::path config_path = std::filesystem::path(internal_storage) / "swe1racer";
+    if (argc >= 3) {
+        extern void podone_configure_vulkan(const std::filesystem::path&, const char*, const char*);
+        podone_configure_vulkan(config_path / "drivers", argv[1], argv[2]);
+    }
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "SWE1Racer", "Using config path: %s", config_path.string().c_str());
 #endif

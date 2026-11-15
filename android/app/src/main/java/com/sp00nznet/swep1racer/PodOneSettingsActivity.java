@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.widget.FrameLayout;
 
 import io.github.frostfrontend.FrostButtonMapper;
@@ -23,10 +24,9 @@ public final class PodOneSettingsActivity extends Activity {
     private final FrostSpeakerTest speaker = new FrostSpeakerTest();
     private boolean mapping;
     private PodOneSaveManager saves;
+    private TouchPadView touchEditor;
+    private PodOneDrivers drivers;
 
-    private static final String[] ASPECTS = {
-        "Original (4:3)", "Expand (16:9)", "Expand (16:10)", "Expand (3:2)", "Expand (21:9)", "Expand to Screen"
-    };
     private static final String[] FILTERS = {"Sharp", "Smooth"};
     private static final String[] SCALES = {"1x", "2x", "3x", "Fit"};
     private static final String[] MSAAS = {"Off", "2x", "4x"};
@@ -51,7 +51,11 @@ public final class PodOneSettingsActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(0xFF0A1425);
         frontend = new FrostFrontendView(this);
+        drivers = new PodOneDrivers(this, false, frontend::refresh);
         root.addView(frontend, new FrameLayout.LayoutParams(-1,-1));
+        touchEditor = new TouchPadView(this);
+        touchEditor.setVisibility(View.GONE);
+        root.addView(touchEditor, new FrameLayout.LayoutParams(-1, -1));
         frontend.setTabs(Arrays.asList(
             new FrostFrontendView.Tab("graphics", "Graphics"),
             new FrostFrontendView.Tab("sound", "Sound"),
@@ -99,16 +103,15 @@ public final class PodOneSettingsActivity extends Activity {
             case "graphics": return Arrays.asList(
                 item("resolution","Resolution Scale",SCALES[ix("resolution",3,4)],"Internal resolution or Fit"),
                 item("downsample","Downsampling",DOWNSAMPLES[ix("downsample",0,3)],"RT64 downsampling"),
-                item("aspect","Aspect Ratio",ASPECTS[ix("aspect",0,6)],
+                item("aspect","Aspect Ratio",PodOneFrontend.ASPECT_NAMES[ix("aspect",0,PodOneFrontend.ASPECT_NAMES.length)],
                      "Original, fixed ratio or Expand to Screen without stretching"),
                 item("window","Display Mode","Fullscreen","Immersive fullscreen Vulkan"),
                 item("refresh","Framerate / Refresh",REFRESH[ix("refresh",0,3)],
                      "Display refresh mode; game speed unchanged"),
                 item("msaa","MSAA",MSAAS[ix("msaa",0,3)],"Anti-aliasing, experimental on Odin"),
                 item("filter","Texture Filtering",FILTERS[ix("filter",1,2)],"Sharp or smooth output"),
-                item("driver","Graphics Driver","System default",
-                     "View information about Android’s system Vulkan driver"),
-                item("share_log","Share Startup Log","","Share available app/device diagnostics"),
+                item("driver","Graphics Driver",drivers.selectedName(),
+                     "Import an Adreno driver ZIP or choose the system Vulkan driver"),
                 item("fps","Show FPS Counter",onOff("fps",false),"In-game FPS overlay")
             );
             case "sound": return Collections.singletonList(
@@ -118,7 +121,7 @@ public final class PodOneSettingsActivity extends Activity {
                     item("mapping","Physical Button Mapping","","Remap controller actions"),
                     item("left_stick","Steering","Left analogue stick","Preserved"),
                     item("right_stick","Camera","Right analogue stick","Preserved"),
-                    item("menu_key","Menu Shortcut","Select button","Start remains in-game pause")
+                    item("menu_key","Menu Shortcut","Start / Select","Start opens and pauses during a race. Select or tap the menu icon anytime.")
                 );
                 return PodOneControls.mappingRows(mapper);
             case "touch": return Arrays.asList(
@@ -126,7 +129,7 @@ public final class PodOneSettingsActivity extends Activity {
                 item("boost","Touch BOOST",onOff("boost",true),""),
                 item("size","Control Size",SIZES[ix("size",1,3)],""),
                 item("opacity","Touch Opacity",OPACITIES[ix("opacity",0,4)]+"%",""),
-                item("layout","Move Touch Layout","In game","Drag touch controls and the menu icon during gameplay")
+                item("layout","Edit Touch Layout","","Move and resize touch controls and the menu button")
             );
             case "saves": return Collections.singletonList(
                 item("manage_saves","Manage Racer Saves","","Export, restore or delete the Racer save"));
@@ -144,10 +147,10 @@ public final class PodOneSettingsActivity extends Activity {
 
     private void adjust(String tab,String id,int d) {
         if ("graphics".equals(tab) && "driver".equals(id)) {
-            PodOneDiagnostics.showGraphicsDriver(this);
+            drivers.show();
             return;
         }
-        if (("graphics".equals(tab) || "diagnostics".equals(tab)) && "share_log".equals(id)) {
+        if ("diagnostics".equals(tab) && "share_log".equals(id)) {
             PodOneDiagnostics.shareStartupLog(this);
             return;
         }
@@ -190,6 +193,18 @@ public final class PodOneSettingsActivity extends Activity {
             }
             return;
         }
+        if ("touch".equals(tab) && "layout".equals(id)) {
+            touchEditor.loadLayout(prefs);
+            touchEditor.setSizeScale(PodOneFrontend.SIZES[ix("size", 1, SIZES.length)]);
+            frontend.setVisibility(View.GONE);
+            touchEditor.setVisibility(View.VISIBLE);
+            touchEditor.startEditing(() -> {
+                touchEditor.setVisibility(View.GONE);
+                frontend.setVisibility(View.VISIBLE);
+                frontend.requestFocus();
+            });
+            return;
+        }
         SharedPreferences.Editor e=prefs.edit();
         switch(id) {
             case "aspect": e.putInt("aspect",cy("aspect",0,6,d)); break;
@@ -209,15 +224,18 @@ public final class PodOneSettingsActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
-        if(frontend!=null&&frontend.isOpen()) return frontend.handleKeyEvent(e);
+        if (touchEditor != null && touchEditor.isEditing()) return touchEditor.handleEditorKey(e);
+        if (frontend != null && frontend.isOpen()) return frontend.handleKeyEvent(e);
         return super.dispatchKeyEvent(e);
     }
     @Override public boolean dispatchGenericMotionEvent(MotionEvent e) {
-        if(frontend!=null&&frontend.handleGenericMotionEvent(e)) return true;
+        if (touchEditor != null && touchEditor.isEditing()) return true;
+        if (frontend != null && frontend.handleGenericMotionEvent(e)) return true;
         return super.dispatchGenericMotionEvent(e);
     }
     @Override public void onBackPressed() {
-        if(frontend!=null&&frontend.isOpen()) frontend.back();
+        if (touchEditor != null && touchEditor.isEditing()) touchEditor.finishEditing(false);
+        else if (frontend != null && frontend.isOpen()) frontend.back();
         else finish();
     }
     @Override public void onWindowFocusChanged(boolean hasFocus) {
@@ -227,6 +245,7 @@ public final class PodOneSettingsActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (drivers.onActivityResult(request, result, data)) return;
         if (result == RESULT_OK && data != null && data.getData() != null
                 && (request == PodOneSaveManager.EXPORT_SAVE || request == PodOneSaveManager.IMPORT_SAVE)) {
             saves.transfer(request, data.getData());
