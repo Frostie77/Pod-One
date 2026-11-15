@@ -114,14 +114,13 @@ public final class PodOneSettingsActivity extends Activity {
                      "Import an Adreno driver ZIP or choose the system Vulkan driver"),
                 item("fps","Show FPS Counter",onOff("fps",false),"In-game FPS overlay")
             );
-            case "sound": return Collections.singletonList(
-                item("latency","Audio Buffer","Low-latency test","512-sample SDL buffer"));
+            case "sound": return Collections.singletonList(PodOneFrontend.audioBufferItem(prefs));
             case "controls":
                 if (!mapping) return Arrays.asList(
                     item("mapping","Physical Button Mapping","","Remap controller actions"),
                     item("left_stick","Steering","Left analogue stick","Preserved"),
                     item("right_stick","Camera","Right analogue stick","Preserved"),
-                    item("menu_key","Menu Shortcut","Start / Select","Start opens and pauses during a race. Select or tap the menu icon anytime.")
+                    item("menu_key","Menu Shortcut","Start / Select","Start opens both pause menus. Select opens only Racer’s pause menu.")
                 );
                 return PodOneControls.mappingRows(mapper);
             case "touch": return Arrays.asList(
@@ -165,7 +164,10 @@ public final class PodOneSettingsActivity extends Activity {
                 .setPositiveButton("OK",null).show();
             return;
         }
-        if ("sound".equals(tab)) return;
+        if ("sound".equals(tab)) {
+            if ("latency".equals(id)) PodOneFrontend.toggleAudioBuffer(prefs);
+            return;
+        }
         if ("updates".equals(tab)) { if ("check".equals(id)) PodOneUpdates.check(this,frontend); return; }
         if ("saves".equals(tab)) {
             if ("manage_saves".equals(id)) saves.show();

@@ -254,6 +254,11 @@ constexpr uint64_t SWE1R_ROM_HASH = 0x9B89D0F9EBC12D32ULL; // XXH3_64bits of bas
 static SDL_Window* g_window = nullptr;
 static SDL_GameController* g_controller = nullptr;
 static std::atomic<bool> g_frontend_open{false};
+#if defined(__ANDROID__)
+static std::atomic<uint64_t> g_guest_vi_count{0};
+static std::atomic<uint64_t> g_start_ready_vi{0};
+static std::atomic<int> g_start_reads{0};
+#endif
 // Android KeyEvent codes: A, B, Z, R, C-Up, C-Down, C-Left, C-Right.
 static std::atomic<int> g_gamepad_keys[8] = {96, 97, 104, 103, 100, 106, 99, 107};
 
@@ -461,9 +466,16 @@ static uint32_t find_local_racer() {
     return read32(object) == 0x54657374u ? object : 0; // 'Test'
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeQueueOriginalStart(JNIEnv*, jclass) {
+    g_start_ready_vi.store(0);
+    g_start_reads.store(2);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeHasLocalRacer(JNIEnv*, jclass) {
-    return find_local_racer() != 0 ? JNI_TRUE : JNI_FALSE;
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeOriginalStartReady(JNIEnv*, jclass) {
+    const uint64_t ready_vi = g_start_ready_vi.load();
+    return ready_vi > 0 && g_guest_vi_count.load() >= ready_vi ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -547,6 +559,14 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
         *y -= axis(SDL_CONTROLLER_AXIS_LEFTY);
     }
 
+#if defined(__ANDROID__)
+    int remaining = g_start_reads.load();
+    if (remaining > 0 && g_start_reads.compare_exchange_strong(remaining, remaining - 1)) {
+        *buttons |= 0x1000;
+        if (remaining == 1) g_start_ready_vi.store(g_guest_vi_count.load() + 4);
+    }
+#endif
+
     // On-screen touch pad (Android)
     *buttons |= (uint16_t)(g_touch_buttons.load() & 0xFFFF);
     const float tx = g_touch_x.load();
@@ -586,7 +606,9 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
 // =============================================================================
 
 void vi_callback() {
-    // Called every VI interrupt
+#if defined(__ANDROID__)
+    g_guest_vi_count.fetch_add(1);
+#endif
 }
 
 void gfx_init_callback() {

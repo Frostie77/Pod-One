@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <string>
 #if defined(__ANDROID__)
 #include <sys/system_properties.h>
@@ -39,27 +40,27 @@ static void dummy_check_interrupts() {
     // No-op: ultramodern handles interrupts
 }
 
-// Pod One picture settings from FrostFrontend, set through JNI from the UI thread and
-// applied on RT64's thread at the next update_screen. -1 = not set yet (keep rt64.json's value).
-//   aspect: 0 = 4:3, 1 = 16:9, 2 = 16:10, 3 = 3:2, 4 = 21:9, 5 = Expand to Screen;  filter: 0 = sharp, 1 = smooth;
-//   resolution: 0 = 1x (N64), 1 = 2x, 2 = 3x, 3 = fit the screen (whole multiple).
-#include <atomic>
-static std::atomic<int> g_video_aspect{ -1 }, g_video_filter{ -1 }, g_video_resolution{ -1 };
-static std::atomic<bool> g_video_dirty{ false };
-static std::atomic<int> g_video_msaa{ 0 }, g_video_downsample{ 0 }, g_video_refresh{ 0 };
-static std::atomic<float> g_game_fps{ 0.0f };   // frames the game finished per second (VI origin changes)
-static std::atomic<float> g_dl_rate{ 0.0f };    // display lists (graphics tasks) per second
+// Publish one complete configuration from the UI thread at a time.
+struct VideoRequest {
+    int aspect = -1;
+    int filter = -1;
+    int resolution = -1;
+    int msaa = 0;
+    int downsample = 0;
+    int refresh = 0;
+};
+static std::mutex g_video_request_mutex;
+static VideoRequest g_video_request;
+static std::atomic<bool> g_video_dirty{false};
+static std::atomic<float> g_game_fps{0.0f};
+static std::atomic<float> g_dl_rate{0.0f};
 
 #if defined(__ANDROID__)
 #include <jni.h>
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetVideo(JNIEnv*, jclass, jint aspect, jint filter, jint resolution, jint msaa, jint downsample, jint refresh) {
-    g_video_aspect.store(aspect);
-    g_video_filter.store(filter);
-    g_video_resolution.store(resolution);
-    g_video_msaa.store(msaa);
-    g_video_downsample.store(downsample);
-    g_video_refresh.store(refresh);
+    const std::scoped_lock lock{g_video_request_mutex};
+    g_video_request = {aspect, filter, resolution, msaa, downsample, refresh};
     g_video_dirty.store(true);
 }
 
@@ -221,6 +222,7 @@ public:
 
     void send_dl(const OSTask* task) override {
         if (!app_ || !is_valid_) return;
+        apply_pending_video_settings();
 
         dl_count_++;
         if (dl_count_ <= 5 || (dl_count_ % 60 == 0)) {
@@ -290,9 +292,7 @@ public:
                    vi_regs_->VI_H_START_REG, vi_regs_->VI_V_START_REG, vi_regs_->VI_X_SCALE_REG, vi_regs_->VI_Y_SCALE_REG);
         }
 
-        if (g_video_dirty.exchange(false)) {
-            apply_video_settings();
-        }
+        apply_pending_video_settings();
 
         // Game frame rate: a finished frame moves the VI origin to another framebuffer.
         {
@@ -316,14 +316,47 @@ public:
         app_->updateScreen();
     }
 
-    // Side-menu picture settings into RT64's user configuration (runs on the thread that calls update_screen).
-    void apply_video_settings() {
-        RT64::UserConfiguration& cfg = app_->userConfig;
-        int aspect = g_video_aspect.load();
-        const int filter = g_video_filter.load(), resolution = g_video_resolution.load();
-#if defined(__ANDROID__)
-        podone_set_fill_screen(aspect == 5);
-#endif
+    // RT64's asynchronous framebuffer discard can wait for presentation with
+    // its configuration mutex held. The present worker needs that same mutex.
+    // At a drained queue boundary we can release the targets synchronously.
+    bool reset_idle_render_targets() {
+        auto &workloads = *app_->workloadQueue;
+        auto &presents = *app_->presentQueue;
+        std::unique_lock workload_lock(workloads.threadMutex, std::defer_lock);
+        std::unique_lock present_lock(presents.threadMutex, std::defer_lock);
+        if (std::try_lock(workload_lock, present_lock) != -1) return false;
+
+        const std::scoped_lock queue_state(workloads.cursorMutex, presents.cursorMutex,
+                                          workloads.workloadIdMutex, presents.presentIdMutex);
+        if (workloads.threadCursor != workloads.writeCursor || presents.threadCursor != presents.writeCursor
+                || workloads.workloadId != app_->state->workloadId
+                || presents.presentId != app_->state->presentId) return false;
+
+        auto &resources = *app_->sharedQueueResources;
+        const std::scoped_lock targets(resources.managerMutex, resources.interpolatedMutex);
+        workloads.renderFramebufferManager->destroyAll();
+        resources.renderTargetManager.destroyAll();
+        resources.framebufferManager.destroyAllTileCopies();
+        resources.interpolatedColorTargets.clear();
+        for (auto &counters : resources.interpolatedFrames) counters = {};
+        return true;
+    }
+
+    void apply_pending_video_settings() {
+        if (!g_video_dirty.exchange(false)) return;
+        VideoRequest request;
+        {
+            const std::scoped_lock lock{g_video_request_mutex};
+            request = g_video_request;
+        }
+        if (!apply_video_settings(request)) g_video_dirty.store(true);
+    }
+
+    bool apply_video_settings(const VideoRequest &request) {
+        const auto &previous = app_->userConfig;
+        auto cfg = previous;
+        int aspect = request.aspect;
+        const int filter = request.filter, resolution = request.resolution;
         if (aspect == 0) {
             cfg.aspectRatio = RT64::UserConfiguration::AspectRatio::Original;
         } else if (aspect == 5) {
@@ -349,19 +382,32 @@ public:
         } else if (resolution == 3) {
             cfg.resolution = RT64::UserConfiguration::Resolution::WindowIntegerScale;
         }
-        const int msaa = std::clamp(g_video_msaa.load(), 0, 2);
+        const int msaa = std::clamp(request.msaa, 0, 2);
         cfg.antialiasing = msaa == 0 ? RT64::UserConfiguration::Antialiasing::None
             : msaa == 1 ? RT64::UserConfiguration::Antialiasing::MSAA2X
                         : RT64::UserConfiguration::Antialiasing::MSAA4X;
-        cfg.downsampleMultiplier = std::clamp(g_video_downsample.load() + 1, 1, 3);
-        const int refresh = std::clamp(g_video_refresh.load(), 0, 2);
+        cfg.downsampleMultiplier = std::clamp(request.downsample + 1, 1, 3);
+        const int refresh = std::clamp(request.refresh, 0, 2);
         cfg.refreshRate = refresh == 0 ? RT64::UserConfiguration::RefreshRate::Original
             : refresh == 1 ? RT64::UserConfiguration::RefreshRate::Display
                            : RT64::UserConfiguration::RefreshRate::Manual;
         cfg.refreshRateTarget = 60;
+        const bool rebuild_targets = cfg.aspectRatio != previous.aspectRatio
+                || cfg.aspectTarget != previous.aspectTarget
+                || cfg.resolution != previous.resolution
+                || cfg.resolutionMultiplier != previous.resolutionMultiplier
+                || cfg.downsampleMultiplier != previous.downsampleMultiplier
+                || cfg.antialiasing != previous.antialiasing;
+        if (rebuild_targets && !reset_idle_render_targets()) return false;
+
+#if defined(__ANDROID__)
+        podone_set_fill_screen(aspect == 5);
+#endif
+        app_->userConfig = cfg;
+        app_->updateUserConfig(false);
         printf("[SWE1R] video: aspect %d filter %d scale %d msaa %d downsample %d refresh %d\n",
                aspect, filter, resolution, msaa, cfg.downsampleMultiplier, refresh);
-        app_->updateUserConfig(true);
+        return true;
     }
 
     void shutdown() override {

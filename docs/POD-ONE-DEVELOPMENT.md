@@ -20,7 +20,7 @@
 - Replaces `RacerMenu`; old menu implementation removed. FrostFrontend uses the approved navy/gold layout with a proportional sidebar, aligned setting values and a selected-item description panel.
 - Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates, Diagnostics, About. The latter two offer real own-app log sharing and port credits; no fake renderer/driver settings are added.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
-- Start opens FrostFrontend during a race. The original Start input remains available in the game’s title and menus. Select and the touch menu button can open the frontend at any time.
+- Start sends the original N64 Start input and opens FrostFrontend after the game has had time to draw its pause menu. Closing FrostFrontend leaves Racer’s menu underneath. Select sends the original Start input only.
 - The shared FrostFrontend test submodule now has the preview-inspired **left-hand sidebar** and **right settings panel**. Changes remain on the shared library feature branch until device testing.
 - While FrostFrontend or its touch editor is open, Pod One pauses the VI scheduler and excludes the elapsed pause from the guest clock. The D-pad and left stick move between the sidebar and options. A selects or cycles forward, and X cycles a setting backward.
 
@@ -31,11 +31,12 @@
 - MSAA Off/2x/4x; downsampling Off/2x/3x; output refresh Original/Display/Manual 60.
 - Android Window Mode is fullscreen only; the menu shows the actual supported mode instead of offering a nonworking windowed toggle.
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
+- Aspect and resolution changes replace RT64 render targets after both GPU queues finish using them.
 - The existing RT64 rectangle correction maintains HUD width. Per-element HUD anchoring and scenery culling need matching race captures across the aspect modes.
 
 ### Sound and input
 
-- SDL audio buffer reduced from 1024 to 512 samples; queued-audio cap now scales with device frequency to approximately 125 ms. Test for improvement and crackle.
+- Sound → Audio Buffer switches between 512-frame Low Latency and 1024-frame Stable. The running game applies it on its next audio submission. The queue still limits accumulated latency to approximately 125 ms.
 - Stereo Speaker Test is available in Diagnostics.
 - Physical gamepad bindings saved via FrostButtonMapper and forwarded to SDL N64 button bits.
 - Left stick steering and right stick C-camera input remain unchanged.
@@ -44,7 +45,7 @@
 
 ### Touch and saves
 
-- Edit Touch Layout is available from launcher settings and during a race. The navy/gold touch menu button defaults to the lower-left corner. A position the player saved is carried forward.
+- Edit Touch Layout is available from launcher settings and during a race. The navy/gold touch menu button defaults to the upper-left corner. A position the player saved is carried forward.
 - The touch controls may be hidden without hiding the menu control.
 - From the launcher, Settings → Save Management opens export, import with backup and confirmation, and delete.
 - In-game Save Management directs the user to launcher settings after quitting the current game so an active save can close safely.

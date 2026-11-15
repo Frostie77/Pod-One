@@ -9,6 +9,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -38,7 +39,9 @@ public final class SWE1RacerActivity extends SDLActivity {
                                       int msaa, int downsample, int refresh);
     static native void nativeSetFrontendOpen(boolean open);
     static native void nativeSetGamepadKeys(int[] androidKeycodes);
-    static native boolean nativeHasLocalRacer();
+    static native void nativeQueueOriginalStart();
+    static native boolean nativeOriginalStartReady();
+    static native void nativeSetAudioBuffer(int frames);
     static native float nativeGameFps();
     static native float nativeDisplayListRate();
     static native int nativeBoostState();      // 0 not ready, 1 charging, 2 ready, -1 no local racer
@@ -48,7 +51,18 @@ public final class SWE1RacerActivity extends SDLActivity {
     private TouchPadView pad;
     private PodOneFrontend menu;
     private TextView fpsView;
-    private boolean frontendStartDown;
+    private long pauseMenuDeadline;
+    private final Runnable openStackedPause = new Runnable() {
+        @Override public void run() {
+            if (pauseMenuDeadline == 0 || isFinishing() || menu == null) return;
+            if (!nativeOriginalStartReady() && SystemClock.uptimeMillis() < pauseMenuDeadline) {
+                handler.postDelayed(this, 16);
+                return;
+            }
+            pauseMenuDeadline = 0;
+            menu.open();
+        }
+    };
     private final Runnable fpsTick = new Runnable() {
         @Override
         public void run() {
@@ -92,7 +106,9 @@ public final class SWE1RacerActivity extends SDLActivity {
             mLayout.addView(pad, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             menu = new PodOneFrontend(this, pad, prefs);
-            pad.setOnMenu(menu::open);
+            pad.setOnMenu(() -> {
+                if (pauseMenuDeadline == 0) menu.open();
+            });
             pad.loadLayout(prefs);
             pad.setPadVisible(prefs.getBoolean(PodOneFrontend.PAD, true));
             pad.setBoostEnabled(prefs.getBoolean(PodOneFrontend.BOOST, true));
@@ -105,6 +121,11 @@ public final class SWE1RacerActivity extends SDLActivity {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
         applyVideo();
+        applyAudio();
+    }
+
+    void applyAudio() {
+        nativeSetAudioBuffer(PodOneFrontend.audioBufferFrames(prefs));
     }
 
     private static int clamp(int v, int count) { return Math.max(0, Math.min(count - 1, v)); }
@@ -123,7 +144,7 @@ public final class SWE1RacerActivity extends SDLActivity {
         }
     }
 
-    /** The FPS counter: a small label in the top-left corner, updated twice a second. */
+    /** Updates the FPS label twice a second. */
     void setFpsShown(boolean on) {
         if (on && fpsView == null && mLayout != null) {
             fpsView = new TextView(this);
@@ -134,8 +155,8 @@ public final class SWE1RacerActivity extends SDLActivity {
             final int p = Math.round(6 * getResources().getDisplayMetrics().density);
             fpsView.setPadding(p, p / 2, p, p / 2);
             final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
-            lp.setMargins(p * 2, p * 2, 0, 0);
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+            lp.setMargins(0, p * 2, p * 2, 0);
             mLayout.addView(fpsView, lp);
             handler.post(fpsTick);
         } else if (!on && fpsView != null) {
@@ -149,6 +170,10 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus) {
+            pauseMenuDeadline = 0;
+            handler.removeCallbacks(openStackedPause);
+        }
         if (hasFocus) {
             if (menu != null) menu.reapplyMappings();
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
@@ -162,17 +187,19 @@ public final class SWE1RacerActivity extends SDLActivity {
         if (PodOneControls.isControllerBack(event)) return true;
         if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
         final int code = event.getKeyCode();
-        if (code == KeyEvent.KEYCODE_BUTTON_START && frontendStartDown) {
-            if (event.getAction() == KeyEvent.ACTION_UP) frontendStartDown = false;
+        if (code == KeyEvent.KEYCODE_BUTTON_SELECT && menu != null) {
+            if (!menu.isOpen() && pauseMenuDeadline == 0 && event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) nativeQueueOriginalStart();
             return true;
         }
         if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
-        if (menu != null && (code == KeyEvent.KEYCODE_BUTTON_SELECT
-                || code == KeyEvent.KEYCODE_MENU
-                || (code == KeyEvent.KEYCODE_BUTTON_START && nativeHasLocalRacer()))) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                frontendStartDown = code == KeyEvent.KEYCODE_BUTTON_START;
-                menu.open();
+        if (code == KeyEvent.KEYCODE_BUTTON_START && menu != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0
+                    && pauseMenuDeadline == 0) {
+                // The original menu needs a guest Start press and time to draw before we freeze it.
+                nativeQueueOriginalStart();
+                pauseMenuDeadline = SystemClock.uptimeMillis() + 600;
+                handler.postDelayed(openStackedPause, 16);
             }
             return true;
         }
@@ -218,6 +245,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacks(fpsTick);
+        handler.removeCallbacks(openStackedPause);
         if (menu != null) {
             menu.destroy();
             nativeSetFrontendOpen(false);

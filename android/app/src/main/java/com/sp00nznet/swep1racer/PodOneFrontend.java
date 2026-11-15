@@ -17,6 +17,7 @@ import java.util.List;
 final class PodOneFrontend {
     static final String PREFS = "racer";
     static final String ASPECT = "aspect", FILTER = "filter", RESOLUTION = "resolution", FPS = "fps";
+    private static final String AUDIO_BUFFER = "audio_buffer_frames";
     static final String MSAA = "msaa", DOWNSAMPLE = "downsample", REFRESH = "refresh";
     static final String PAD = "pad", BOOST = "boost", OPACITY = "opacity", SIZE = "size";
     static final int DEF_ASPECT = 0, DEF_FILTER = 1, DEF_RESOLUTION = 3, DEF_OPACITY = 0, DEF_SIZE = 1;
@@ -105,8 +106,23 @@ final class PodOneFrontend {
     static boolean isAdjustable(String tab, String id) {
         if ("graphics".equals(tab))
             return !("window".equals(id) || "driver".equals(id));
+        if ("sound".equals(tab)) return "latency".equals(id);
         return "touch".equals(tab) && ("pad".equals(id) || "boost".equals(id)
                 || "size".equals(id) || "opacity".equals(id));
+    }
+
+    static int audioBufferFrames(SharedPreferences prefs) {
+        return prefs.getInt(AUDIO_BUFFER, 512) == 1024 ? 1024 : 512;
+    }
+
+    static FrostFrontendView.Item audioBufferItem(SharedPreferences prefs) {
+        String value = audioBufferFrames(prefs) == 512 ? "Low Latency (512)" : "Stable (1024)";
+        return item("latency", "Audio Buffer", value,
+                "Switch the game’s SDL audio buffer. Stable uses more buffering to reduce crackle.");
+    }
+
+    static void toggleAudioBuffer(SharedPreferences prefs) {
+        prefs.edit().putInt(AUDIO_BUFFER, audioBufferFrames(prefs) == 512 ? 1024 : 512).apply();
     }
 
     private int index(String key, int fallback, int count) {
@@ -144,15 +160,13 @@ final class PodOneFrontend {
                          "Show gameplay frames per second")
                 );
             case "sound":
-                return Collections.singletonList(
-                    item("latency", "Audio Buffer", "Low-latency experimental",
-                         "512-sample SDL buffer; listen for crackle during tests"));
+                return Collections.singletonList(audioBufferItem(prefs));
             case "controls":
                 if (!editingMappings) return Arrays.asList(
                     item("mapping", "Physical Button Mapping", "", "Remap gamepad buttons and triggers"),
                     item("analog", "Steering", "Left analogue stick", "Original analogue steering is unchanged"),
                     item("camera", "Camera", "Right analogue stick", "C-direction input is retained"),
-                    item("menu_key", "Open Menu", "Start / Select", "Start opens and pauses during a race. Select or tap the menu icon anytime.")
+                    item("menu_key", "Open Menu", "Start / Select", "Start opens both pause menus. Select opens only Racer’s pause menu.")
                 );
                 return PodOneControls.mappingRows(mapper);
             case "touch":
@@ -203,7 +217,13 @@ final class PodOneFrontend {
                     .setPositiveButton("OK", null).show();
             return;
         }
-        if ("sound".equals(tab)) return;
+        if ("sound".equals(tab)) {
+            if ("latency".equals(id)) {
+                toggleAudioBuffer(prefs);
+                activity.applyAudio();
+            }
+            return;
+        }
         if ("saves".equals(tab)) {
             if ("save_manager".equals(id)) activity.showSaveManagerInfo();
             return;

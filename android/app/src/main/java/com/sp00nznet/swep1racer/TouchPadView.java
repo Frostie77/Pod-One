@@ -53,7 +53,7 @@ public final class TouchPadView extends View {
 
     private static final float TOGGLE_R = 0.045f;
     private static final int MENU_CONTROL = CONTROLS;
-    private static final float DEFAULT_MENU_X = 0.045f, DEFAULT_MENU_Y = 0.91f;
+    private static final float DEFAULT_MENU_X = 0.045f, DEFAULT_MENU_Y = 0.082f;
     private float menuX = DEFAULT_MENU_X, menuY = DEFAULT_MENU_Y, menuScale = 1.0f;
     private static final int ACCENT = 0xFF8AB4FF;
 
@@ -146,8 +146,10 @@ public final class TouchPadView extends View {
                 menuX = clampf(Float.parseFloat(v[0]), 0.04f, 0.96f);
                 menuY = clampf(Float.parseFloat(v[1]), 0.05f, 0.95f);
                 menuScale = clampf(Float.parseFloat(v[2]), 0.65f, 1.8f);
-                // The old default was saved even when the menu position was never moved.
-                if (menuX == 0.50f && menuY == 0.06f && menuScale == 1f) {
+                // Older builds saved their defaults even if the player had only moved other controls.
+                boolean oldDefault = (menuX == 0.50f && menuY == 0.06f)
+                        || (menuX == 0.045f && menuY == 0.91f);
+                if (oldDefault && menuScale == 1f) {
                     menuX = DEFAULT_MENU_X;
                     menuY = DEFAULT_MENU_Y;
                 }
