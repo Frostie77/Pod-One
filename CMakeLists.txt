@@ -38,6 +38,9 @@ if (ANDROID)
     set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "Use SDL Vulkan windows" FORCE)
 endif()
 add_subdirectory(${RT64_DIR} ${CMAKE_BINARY_DIR}/rt64)
+if (ANDROID)
+    include(cmake/PodOneRT64.cmake)
+endif()
 
 # =============================================================================
 # N64ModernRuntime (librecomp + ultramodern)
@@ -84,7 +87,6 @@ if (ANDROID)
     add_subdirectory(lib/adrenotools)
     add_library(SWE1Racer SHARED
         ${SWE1RACER_HOST_SOURCES}
-        src/podone_pause.cpp
         src/podone_vi.cpp
         src/podone_vulkan.cpp
     )
@@ -129,9 +131,6 @@ elseif(ANDROID)
     add_dependencies(SWE1Racer main_hook file_redirect_hook gsl_alloc_hook hook_impl)
     target_link_options(SWE1Racer PRIVATE
         "-Wl,--wrap=SDL_Vulkan_CreateSurface"
-        "-Wl,--wrap=osGetTime"
-        "-Wl,--wrap=osSetTime"
-        "-Wl,--wrap=osGetCount"
         "-Wl,--wrap=_ZNK4RT642VI13viewRectangleEv"
         "-Wl,--wrap=_ZNK4RT642VI13cropRectangleEv"
     )

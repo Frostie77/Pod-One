@@ -39,7 +39,7 @@ public final class SWE1RacerActivity extends SDLActivity {
                                       int msaa, int downsample, int refresh);
     static native void nativeSetFrontendOpen(boolean open);
     static native void nativeSetGamepadKeys(int[] androidKeycodes);
-    static native void nativeQueueOriginalStart();
+    static native boolean nativeQueueOriginalStart(boolean raceOnly);
     static native boolean nativeOriginalStartReady();
     static native void nativeSetAudioBuffer(int frames);
     static native float nativeGameFps();
@@ -106,9 +106,7 @@ public final class SWE1RacerActivity extends SDLActivity {
             mLayout.addView(pad, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             menu = new PodOneFrontend(this, pad, prefs);
-            pad.setOnMenu(() -> {
-                if (pauseMenuDeadline == 0) menu.open();
-            });
+            pad.setOnMenu(this::openFrontend);
             pad.loadLayout(prefs);
             pad.setPadVisible(prefs.getBoolean(PodOneFrontend.PAD, true));
             pad.setBoostEnabled(prefs.getBoolean(PodOneFrontend.BOOST, true));
@@ -183,24 +181,29 @@ public final class SWE1RacerActivity extends SDLActivity {
         }
     }
 
+    private void openFrontend() {
+        if (menu == null || menu.isOpen() || pauseMenuDeadline != 0) return;
+        if (nativeQueueOriginalStart(true)) {
+            // Let Racer process Start and draw its pause menu before showing FrostFrontend.
+            pauseMenuDeadline = SystemClock.uptimeMillis() + 600;
+            handler.postDelayed(openStackedPause, 16);
+        } else {
+            menu.open();
+        }
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (PodOneControls.isControllerBack(event)) return true;
         if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
         final int code = event.getKeyCode();
         if (code == KeyEvent.KEYCODE_BUTTON_SELECT && menu != null) {
             if (!menu.isOpen() && pauseMenuDeadline == 0 && event.getAction() == KeyEvent.ACTION_DOWN
-                    && event.getRepeatCount() == 0) nativeQueueOriginalStart();
+                    && event.getRepeatCount() == 0) nativeQueueOriginalStart(false);
             return true;
         }
         if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
         if (code == KeyEvent.KEYCODE_BUTTON_START && menu != null) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0
-                    && pauseMenuDeadline == 0) {
-                // The original menu needs a guest Start press and time to draw before we freeze it.
-                nativeQueueOriginalStart();
-                pauseMenuDeadline = SystemClock.uptimeMillis() + 600;
-                handler.postDelayed(openStackedPause, 16);
-            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) openFrontend();
             return true;
         }
         if (code == KeyEvent.KEYCODE_BACK) {

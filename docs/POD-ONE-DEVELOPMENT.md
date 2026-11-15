@@ -20,9 +20,9 @@
 - Replaces `RacerMenu`; old menu implementation removed. FrostFrontend uses the approved navy/gold layout with a proportional sidebar, aligned setting values and a selected-item description panel.
 - Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates, Diagnostics, About. The latter two offer real own-app log sharing and port credits; no fake renderer/driver settings are added.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
-- Start sends the original N64 Start input and opens FrostFrontend after the game has had time to draw its pause menu. Closing FrostFrontend leaves Racer’s menu underneath. Select sends the original Start input only.
+- During a race, Start and the touch menu button send the original N64 Start input and open FrostFrontend after Racer has had time to draw its pause menu. Racer handles pausing and keeps its menu open after FrostFrontend closes. Select sends the original Start input only.
 - The shared FrostFrontend test submodule now has the preview-inspired **left-hand sidebar** and **right settings panel**. Changes remain on the shared library feature branch until device testing.
-- While FrostFrontend or its touch editor is open, Pod One pauses the VI scheduler and excludes the elapsed pause from the guest clock. The D-pad and left stick move between the sidebar and options. A selects or cycles forward, and X cycles a setting backward.
+- FrostFrontend captures player input while Racer continues to render. The D-pad and left stick move between the sidebar and options. A selects or cycles forward, and X cycles a setting backward.
 
 ### Graphics / RT64
 
@@ -32,6 +32,7 @@
 - Android Window Mode is fullscreen only; the menu shows the actual supported mode instead of offering a nonworking windowed toggle.
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
 - Aspect and resolution changes replace RT64 render targets after both GPU queues finish using them.
+- On Android, RT64 reserves framebuffer coverage for triangles crossing the camera plane and leaves their final clipping to the GPU. Race and menu visuals need verification on the Odin.
 - The existing RT64 rectangle correction maintains HUD width. Per-element HUD anchoring and scenery culling need matching race captures across the aspect modes.
 
 ### Sound and input
