@@ -257,8 +257,8 @@ static std::atomic<uint64_t> g_guest_vi_count{0};
 static std::atomic<uint64_t> g_start_ready_vi{0};
 static std::atomic<int> g_start_reads{0};
 #endif
-// Android KeyEvent codes: A, B, Z, R, C-Up, C-Down, C-Left, C-Right, L.
-static std::atomic<int> g_gamepad_keys[] = {96, 97, 104, 103, 100, 106, 99, 107, 102};
+// Same order as PodOneControls.java: A, B, Z, R, L, C directions, D-pad directions.
+static std::atomic<int> g_gamepad_keys[] = {96, 97, 104, 103, 102, 100, 106, 99, 107, 19, 20, 21, 22};
 
 // =============================================================================
 // RSP Callbacks
@@ -526,6 +526,10 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
         auto axis = [](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(g_controller, a) / 32768.0f; };
         auto pressed = [&](int android_key) -> bool {
             switch (android_key) {
+                case 19: return btn(SDL_CONTROLLER_BUTTON_DPAD_UP);
+                case 20: return btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+                case 21: return btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+                case 22: return btn(SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
                 case 96: return btn(SDL_CONTROLLER_BUTTON_A);
                 case 97: return btn(SDL_CONTROLLER_BUTTON_B);
                 case 99: return btn(SDL_CONTROLLER_BUTTON_X);
@@ -540,7 +544,8 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
             }
         };
         static constexpr uint16_t action_bits[] = {
-            0x8000, 0x4000, 0x2000, 0x0010, 0x0008, 0x0004, 0x0002, 0x0001, 0x0020
+            0x8000, 0x4000, 0x2000, 0x0010, 0x0020, 0x0008, 0x0004, 0x0002, 0x0001,
+            0x0800, 0x0400, 0x0200, 0x0100
         };
         static_assert(std::size(action_bits) == std::size(g_gamepad_keys));
         for (size_t i = 0; i < std::size(action_bits); ++i) {
@@ -549,10 +554,6 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
 #if !defined(__ANDROID__)
         if (btn(SDL_CONTROLLER_BUTTON_START)) *buttons |= 0x1000;
 #endif
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_UP)) *buttons |= 0x0800;
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) *buttons |= 0x0400;
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) *buttons |= 0x0200;
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) *buttons |= 0x0100;
         const float rx = axis(SDL_CONTROLLER_AXIS_RIGHTX);
         const float ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
         if (ry < -0.5f) *buttons |= 0x0008;

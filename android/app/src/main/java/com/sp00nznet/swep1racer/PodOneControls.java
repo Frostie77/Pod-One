@@ -18,28 +18,36 @@ final class PodOneControls {
         new FrostButtonMapper.Action("brake", "Brake (N64 B)", KeyEvent.KEYCODE_BUTTON_B),
         new FrostButtonMapper.Action("slide", "Drift (N64 Z)", KeyEvent.KEYCODE_BUTTON_L2),
         new FrostButtonMapper.Action("repair", "Repair (N64 R)", KeyEvent.KEYCODE_BUTTON_R1),
+        new FrostButtonMapper.Action("cycle_map", "Cycle Map Display (N64 L)", KeyEvent.KEYCODE_BUTTON_L1),
         new FrostButtonMapper.Action("camera_up", "C-Up (Change Camera)", KeyEvent.KEYCODE_BUTTON_Y),
         new FrostButtonMapper.Action("camera_down", "C-Down (Look Back)", KeyEvent.KEYCODE_BUTTON_THUMBL),
         new FrostButtonMapper.Action("camera_left", "C-Left (Roll Left)", KeyEvent.KEYCODE_BUTTON_X),
         new FrostButtonMapper.Action("camera_right", "C-Right (Roll Right)", KeyEvent.KEYCODE_BUTTON_THUMBR),
-        new FrostButtonMapper.Action("cycle_map", "Cycle Map Display (N64 L)", KeyEvent.KEYCODE_BUTTON_L1)
+        new FrostButtonMapper.Action("dpad_up", "N64 D-pad Up", KeyEvent.KEYCODE_DPAD_UP),
+        new FrostButtonMapper.Action("dpad_down", "N64 D-pad Down", KeyEvent.KEYCODE_DPAD_DOWN),
+        new FrostButtonMapper.Action("dpad_left", "N64 D-pad Left", KeyEvent.KEYCODE_DPAD_LEFT),
+        new FrostButtonMapper.Action("dpad_right", "N64 D-pad Right", KeyEvent.KEYCODE_DPAD_RIGHT)
     );
     private static final String[] DESCRIPTIONS = {
         "Apply thrust to accelerate the podracer.",
         "Slow the podracer.",
         "Hold while steering to slide through a turn.",
         "Hold to repair engine damage.",
+        "Cycle the race map and progress displays.",
         "Cycle through the race camera views.",
         "Look behind your podracer during a race.",
         "Roll the podracer to the left to fit through narrow gaps.",
         "Roll the podracer to the right to fit through narrow gaps.",
-        "Cycle the race map and progress displays."
+        "Send Up on the N64 D-pad.",
+        "Send Down on the N64 D-pad.",
+        "Send Left on the N64 D-pad.",
+        "Send Right on the N64 D-pad."
     };
 
     private PodOneControls() {}
 
     static FrostButtonMapper newMapper() {
-        return new FrostButtonMapper(ACTIONS);
+        return new FrostButtonMapper(ACTIONS, true);
     }
 
     static int[] nativeKeys(FrostButtonMapper mapper) {
