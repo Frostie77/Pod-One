@@ -87,6 +87,7 @@ if (ANDROID)
     add_subdirectory(lib/adrenotools)
     add_library(SWE1Racer SHARED
         ${SWE1RACER_HOST_SOURCES}
+        src/podone_hud_capture.cpp
         src/podone_vi.cpp
         src/podone_vulkan.cpp
     )
@@ -131,6 +132,7 @@ elseif(ANDROID)
     add_dependencies(SWE1Racer main_hook file_redirect_hook gsl_alloc_hook hook_impl)
     target_link_options(SWE1Racer PRIVATE
         "-Wl,--wrap=SDL_Vulkan_CreateSurface"
+        "-Wl,--wrap=_ZN4RT6413WorkloadQueue21advanceToNextWorkloadEv"
         "-Wl,--wrap=_ZNK4RT642VI13viewRectangleEv"
         "-Wl,--wrap=_ZNK4RT642VI13cropRectangleEv"
     )
