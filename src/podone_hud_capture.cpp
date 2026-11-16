@@ -35,6 +35,34 @@ namespace {
         return bounds;
     }
 
+    void log_perspective(const RT64::DrawData& draw, const RT64::Projection& projection, unsigned pair, unsigned index) {
+        unsigned triangles = 0, behind = 0, crosses_camera = 0, outside_depth = 0, no_near_clip = 0;
+        for (unsigned i = 0; i < projection.gameCallCount; ++i) {
+            const auto& call = projection.gameCalls[i];
+            const size_t begin = call.meshDesc.faceIndicesStart;
+            const size_t end = std::min(draw.faceIndices.size(), begin + size_t(call.callDesc.triangleCount) * 3);
+            for (size_t face = begin; face + 2 < end; face += 3) {
+                unsigned in_front = 0, outside = 0;
+                for (size_t v = face; v < face + 3; ++v) {
+                    const uint32_t vertex = draw.faceIndices[v];
+                    if (vertex >= draw.posTransformed.size() || vertex >= draw.posScreen.size()) continue;
+                    const float w = draw.posTransformed[vertex].w;
+                    const float z = draw.posScreen[vertex].z;
+                    in_front += w > 0.0f;
+                    outside += z < 0.0f || z > 1.0f;
+                }
+                ++triangles;
+                behind += in_front == 0;
+                crosses_camera += in_front > 0 && in_front < 3;
+                outside_depth += outside > 0;
+                no_near_clip += call.callDesc.NoN;
+            }
+        }
+        __android_log_print(ANDROID_LOG_INFO, log_tag,
+            "perspective %u/%u triangles=%u behind=%u crosses_camera=%u depth_outside=%u no_near_clip=%u",
+            pair, index, triangles, behind, crosses_camera, outside_depth, no_near_clip);
+    }
+
     void log_workload(const RT64::Workload& workload) {
         const auto& draw = workload.drawData;
         __android_log_print(ANDROID_LOG_INFO, log_tag, "workload=%llu vi=%ux%u aspect=%.3f pairs=%u",
@@ -45,12 +73,17 @@ namespace {
         for (uint32_t f = 0; f < workload.fbPairCount; ++f) {
             const auto& pair = workload.fbPairs[f];
             if (pair.gameCallCount == 0) continue;
-            __android_log_print(ANDROID_LOG_INFO, log_tag, "pair=%u dl=%08x fb=%08x width=%u clip=%d,%d,%d,%d",
+            __android_log_print(ANDROID_LOG_INFO, log_tag, "pair=%u dl=%08x fb=%08x width=%u depth=%08x depth_clear=%u clip=%d,%d,%d,%d",
                 f, pair.displayListAddress, pair.colorImage.address, unsigned(pair.colorImage.width),
+                pair.depthImage.address, unsigned(pair.fastPaths.clearDepthOnly),
                 pair.scissorRect.ulx, pair.scissorRect.uly, pair.scissorRect.lrx, pair.scissorRect.lry);
             for (uint32_t p = 0; p < pair.projectionCount; ++p) {
                 const auto& projection = pair.projections[p];
                 using Type = RT64::Projection::Type;
+                if (projection.type == Type::Perspective) {
+                    log_perspective(draw, projection, f, p);
+                    continue;
+                }
                 const bool rect = projection.type == Type::Rectangle;
                 if (!rect && projection.type != Type::Orthographic) continue;
                 for (uint32_t i = 0; i < projection.gameCallCount; ++i) {

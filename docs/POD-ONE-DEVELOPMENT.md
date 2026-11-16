@@ -33,7 +33,8 @@
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
 - Aspect and resolution changes replace RT64 render targets after both GPU queues finish using them.
 - On Android, RT64 reserves framebuffer coverage for triangles crossing the camera plane and leaves their final clipping to the GPU. Race and menu visuals need verification on the Odin.
-- The existing RT64 rectangle correction maintains HUD width. Per-element HUD anchoring and scenery culling need matching race captures across the aspect modes.
+- RT64 skips frame matching when rendering a native frame. A workload without a match uploads its original transforms. Original refresh has reduced clipping in device testing.
+- The widescreen HUD moves the side panels, minimap and instruments together and extends the trim around the centred timer. The layout is based on the two alternating race workloads captured on the Odin.
 
 ### Sound and input
 
@@ -80,7 +81,7 @@
 
 ## Known outstanding items
 
-- Actual HUD anchoring across expanded ratios; requires GPU/display-list capture and N64 overlay grouping.
+- Verify the widescreen HUD on the Odin across aspect ratios and alternate race HUD modes. The clipping investigation also needs a 3D frame capture.
 - On-device verification of paused race timing and the selected Vulkan driver. A successful ZIP import confirms package validation. The game-start log records the actual Vulkan device and driver.
 - ROM-independent public build/release verification: needs Windows/Android SDK/ROM-included local build, **not** a GitHub public artifact containing game code.
 - Pod One currently pins a redesigned shared FrostFrontend **feature branch**. Shared `main` remains unchanged until it passes regression tests against the existing Android ports. Additional BlastDroid improvements should be reviewed for compatibility before merging.

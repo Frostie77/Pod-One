@@ -312,6 +312,7 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
         fprintf(stderr, "Failed to initialize SDL2: %s\n", SDL_GetError());
         std::exit(1);
     }
+    SDL_GameControllerEventState(SDL_ENABLE);
 
     printf("[SWE1R] SDL initialized: %s\n", SDL_GetCurrentVideoDriver());
     return nullptr;
@@ -400,7 +401,6 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
 // =============================================================================
 
 void poll_input() {
-    SDL_GameControllerEventState(SDL_ENABLE);
     if (g_controller != nullptr && !SDL_GameControllerGetAttached(g_controller)) {
         SDL_GameControllerClose(g_controller);
         g_controller = nullptr;
@@ -560,7 +560,8 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     int remaining = g_start_reads.load();
     if (remaining > 0 && g_start_reads.compare_exchange_strong(remaining, remaining - 1)) {
         *buttons |= 0x1000;
-        if (remaining == 1) g_start_ready_vi.store(g_guest_vi_count.load() + 4);
+        // Racer continues rendering behind FrostFrontend once it has read Start.
+        if (remaining == 1) g_start_ready_vi.store(g_guest_vi_count.load() + 1);
     }
 #endif
 
@@ -576,13 +577,6 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     *x = std::clamp(*x, -1.0f, 1.0f);
     *y = std::clamp(*y, -1.0f, 1.0f);
 
-    // 2026-10-21 (Claude): log every change of the pressed buttons the game reads (grep "[pad]"), to check that each
-    // on-screen / gamepad button reaches the game.
-    static uint16_t s_last_buttons = 0;
-    if (*buttons != s_last_buttons) {
-        printf("[pad] buttons 0x%04X (was 0x%04X)\n", *buttons, s_last_buttons);
-        s_last_buttons = *buttons;
-    }
     return true;
 }
 
