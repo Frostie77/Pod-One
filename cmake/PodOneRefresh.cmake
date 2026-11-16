@@ -66,3 +66,50 @@ foreach(section projection transforms vertices match ticks)
     string(REPLACE "${old_${section}}" "${new_${section}}" rt64_workloads "${rt64_workloads}")
 endforeach()
 podone_patch_rt64_source("${rt64_workloads_source}" "${rt64_workloads}")
+
+set(rt64_match_source "${RT64_DIR}/src/hle/rt64_game_frame.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_match_source}")
+file(READ "${rt64_match_source}" rt64_match)
+
+set(old_candidates [=[
+        const RigidBody *prevRigidBody;
+        const hlslpp::float4x4 &firstCurViewProj = firstCurWorkload.drawData.viewProjTransforms[firstCurProj.transformsIndex];
+]=])
+set(new_candidates [=[
+        // Automatic call matching uses material and triangle count. Require the
+        // same local geometry as well so a culled object cannot match a
+        // different object that happens to share its draw state.
+        auto geometryHashes = [](const DrawData &draw, std::vector<uint64_t> &hashes) {
+            hashes.resize(draw.worldTransformVertexIndices.size());
+            for (size_t i = 0; i < hashes.size(); ++i) {
+                const size_t first = size_t(draw.worldTransformVertexIndices[i]) * 3;
+                const size_t count = size_t(draw.worldTransformVertexCount(uint32_t(i))) * 3;
+                hashes[i] = count > 0 ? XXH3_64bits(draw.posFloats.data() + first, count * sizeof(float)) : 0;
+            }
+        };
+        thread_local std::vector<uint64_t> curGeometry, prevGeometry;
+        geometryHashes(firstCurWorkload.drawData, curGeometry);
+        geometryHashes(firstPrevWorkload.drawData, prevGeometry);
+
+        const RigidBody *prevRigidBody;
+        const hlslpp::float4x4 &firstCurViewProj = firstCurWorkload.drawData.viewProjTransforms[firstCurProj.transformsIndex];
+]=])
+set(old_test [=[        for (const IndexPair &indices : transformCheckSet) {]=])
+set(new_test [=[
+        for (const IndexPair &indices : transformCheckSet) {
+            const auto &curDraw = firstCurWorkload.drawData;
+            const auto &curGroup = curDraw.transformGroups[curDraw.worldTransformGroups[indices.first]];
+            if (curGroup.matrixId == G_EX_ID_AUTO &&
+                (curGeometry[indices.first] == 0 || curGeometry[indices.first] != prevGeometry[indices.second])) {
+                continue;
+            }
+]=])
+
+foreach(section candidates test)
+    string(FIND "${rt64_match}" "${old_${section}}" match_start)
+    if(match_start EQUAL -1)
+        message(FATAL_ERROR "Pod One's RT64 geometry matching patch needs to be updated")
+    endif()
+    string(REPLACE "${old_${section}}" "${new_${section}}" rt64_match "${rt64_match}")
+endforeach()
+podone_patch_rt64_source("${rt64_match_source}" "${rt64_match}")
