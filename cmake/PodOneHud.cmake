@@ -6,12 +6,28 @@ set(old_include [=[#include "rt64_framebuffer_renderer.h"]=])
 set(new_include [=[
 #include "rt64_framebuffer_renderer.h"
 #include "podone_hud.h"
+#include "podone_viewport.h"
 ]=])
 set(old_frame [=[        const float commonHeight = float(p.targetHeight);]=])
 set(new_frame [=[
         const float commonHeight = float(p.targetHeight);
-        const float hudOffset = p.fbWidth == podone_hud::framebuffer_width && wideWidth > originalWidth
-            && podone_hud::has_race_hud(fbPair) ? podone_hud::edge_offset(p.resolutionScale.x, p.resolutionScale.y) : 0.0f;
+        const float pixelAspect = podone_viewport::pixel_aspect(*p.curWorkload, p.fbWidth);
+        const bool adjustPerspective = std::abs(scissorRatio * pixelAspect / p.aspectRatioSource - 1.0f) < SimilarityPercentage;
+        const float perspectiveAspectScale = adjustPerspective ? (p.aspectRatioTarget / p.aspectRatioSource) : 1.0f;
+        const bool traceHud = podone_hud::tracing(p.curWorkload->workloadId);
+        const bool raceHud = p.fbWidth == podone_hud::framebuffer_width && (wideWidth > originalWidth || traceHud)
+            && podone_hud::has_race_hud(fbPair);
+        const float hudOffset = raceHud ? podone_hud::edge_offset(p.resolutionScale.x, p.resolutionScale.y) : 0.0f;
+        unsigned anchoredHudRects = 0;
+]=])
+set(old_projection [=[            float projInvRatioScale = 1.0f / aspectRatioScale;]=])
+set(new_projection [=[
+            const bool perspective = proj.type == Projection::Type::Perspective;
+            float projInvRatioScale = 1.0f / (perspective ? perspectiveAspectScale : aspectRatioScale);
+]=])
+set(old_horizontal [=[                bool horizontalRatio = !intersectionRect.isEmpty() && (intersectionRect.width(true, true) > intersectionRect.height(true, true));]=])
+set(new_horizontal [=[
+                bool horizontalRatio = podone_viewport::landscape(intersectionRect, perspective ? pixelAspect : 1.0f);
 ]=])
 set(old_call [=[                        float horizontalMisalignment = 0.0f;]=])
 set(new_call [=[
@@ -29,6 +45,7 @@ set(new_rect [=[
                                 hudAnchor = podone_hud::anchor(call.callDesc);
                                 if (hudAnchor != podone_hud::Anchor::None) {
                                     invRatioScale = p.resolutionScale.y / p.resolutionScale.x;
+                                    ++anchoredHudRects;
                                 }
                             }
                             RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
@@ -39,8 +56,17 @@ set(new_scissor [=[
                         const float scissorScale = hudAnchor == podone_hud::Anchor::None ? invRatioScale : 1.0f;
                         triangles.scissor = convertFixedRect(call.callDesc.scissorRect, p.resolutionScale, p.fbWidth, scissorScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
 ]=])
+set(old_finish [=[        checkRasterScene(rasterScene);]=])
+set(new_finish [=[
+        if (traceHud) {
+            podone_hud::trace_layout(p.curWorkload->workloadId, p.fbPairIndex, p.fbWidth, p.fbHeight,
+                p.resolutionScale.x, p.resolutionScale.y, p.aspectRatioSource, p.aspectRatioTarget,
+                raceHud, hudOffset, anchoredHudRects);
+        }
+        checkRasterScene(rasterScene);
+]=])
 
-foreach(section include frame call rect scissor)
+foreach(section include frame projection horizontal call rect scissor finish)
     string(FIND "${rt64_framebuffer}" "${old_${section}}" match_start)
     if (match_start EQUAL -1)
         message(FATAL_ERROR "Pod One's HUD patch needs to be updated for ${rt64_framebuffer_source}")

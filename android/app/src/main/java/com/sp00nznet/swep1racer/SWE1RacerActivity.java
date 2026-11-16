@@ -193,6 +193,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        event = PodOneControls.normalizeStart(event);
         if (PodOneControls.isControllerBack(event)) return true;
         if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
         final int code = event.getKeyCode();
@@ -202,7 +203,7 @@ public final class SWE1RacerActivity extends SDLActivity {
             return true;
         }
         if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
-        if (code == KeyEvent.KEYCODE_BUTTON_START && menu != null) {
+        if (code == KeyEvent.KEYCODE_BUTTON_START) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) openFrontend();
             return true;
         }

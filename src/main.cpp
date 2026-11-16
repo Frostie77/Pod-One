@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <iterator>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <sys/system_properties.h>
+#include "podone_hud.h"
 #endif
 
 #include "recomp.h"
@@ -255,8 +257,8 @@ static std::atomic<uint64_t> g_guest_vi_count{0};
 static std::atomic<uint64_t> g_start_ready_vi{0};
 static std::atomic<int> g_start_reads{0};
 #endif
-// Android KeyEvent codes: A, B, Z, R, C-Up, C-Down, C-Left, C-Right.
-static std::atomic<int> g_gamepad_keys[8] = {96, 97, 104, 103, 100, 106, 99, 107};
+// Android KeyEvent codes: A, B, Z, R, C-Up, C-Down, C-Left, C-Right, L.
+static std::atomic<int> g_gamepad_keys[] = {96, 97, 104, 103, 100, 106, 99, 107, 102};
 
 // =============================================================================
 // RSP Callbacks
@@ -434,14 +436,16 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetTouchPad(JNIEnv*, jclas
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetFrontendOpen(JNIEnv*, jclass, jboolean open) {
     g_frontend_open.store(open == JNI_TRUE);
+    if (open == JNI_TRUE) g_start_reads.store(0);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetGamepadKeys(JNIEnv* env, jclass, jintArray keys) {
-    if (keys == nullptr || env->GetArrayLength(keys) != 8) return;
-    jint values[8];
-    env->GetIntArrayRegion(keys, 0, 8, values);
-    for (int i = 0; i < 8; ++i) g_gamepad_keys[i].store(values[i]);
+    constexpr jsize count = std::size(g_gamepad_keys);
+    if (keys == nullptr || env->GetArrayLength(keys) != count) return;
+    jint values[count];
+    env->GetIntArrayRegion(keys, 0, count, values);
+    for (jsize i = 0; i < count; ++i) g_gamepad_keys[i].store(values[i]);
 }
 
 // 2026-10-21 (Claude): the local player's boost state, for the pad's BOOST button (fires the moment it is ready).
@@ -463,7 +467,7 @@ static uint32_t find_local_racer() {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeQueueOriginalStart(JNIEnv*, jclass, jboolean race_only) {
-    if (race_only == JNI_TRUE && find_local_racer() == 0) return JNI_FALSE;
+    if (race_only == JNI_TRUE && (find_local_racer() == 0 || !podone_hud::race_clock_running())) return JNI_FALSE;
     g_start_ready_vi.store(0);
     g_start_reads.store(2);
     return JNI_TRUE;
@@ -535,13 +539,16 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
                 default: return false;
             }
         };
-        static constexpr uint16_t action_bits[8] = {
-            0x8000, 0x4000, 0x2000, 0x0010, 0x0008, 0x0004, 0x0002, 0x0001
+        static constexpr uint16_t action_bits[] = {
+            0x8000, 0x4000, 0x2000, 0x0010, 0x0008, 0x0004, 0x0002, 0x0001, 0x0020
         };
-        for (int i = 0; i < 8; ++i) {
+        static_assert(std::size(action_bits) == std::size(g_gamepad_keys));
+        for (size_t i = 0; i < std::size(action_bits); ++i) {
             if (pressed(g_gamepad_keys[i].load())) *buttons |= action_bits[i];
         }
+#if !defined(__ANDROID__)
         if (btn(SDL_CONTROLLER_BUTTON_START)) *buttons |= 0x1000;
+#endif
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_UP)) *buttons |= 0x0800;
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) *buttons |= 0x0400;
         if (btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) *buttons |= 0x0200;
@@ -577,6 +584,9 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     *x = std::clamp(*x, -1.0f, 1.0f);
     *y = std::clamp(*y, -1.0f, 1.0f);
 
+#if defined(__ANDROID__)
+    if (*buttons & 0x1000) podone_hud::note_original_start();
+#endif
     return true;
 }
 

@@ -20,7 +20,8 @@
 - Replaces `RacerMenu`; old menu implementation removed. FrostFrontend uses the approved navy/gold layout with a proportional sidebar, aligned setting values and a selected-item description panel.
 - Sections, in order: Graphics, Sound, Controls, Touch Settings, Save Management, Updates, Diagnostics, About. The latter two offer real own-app log sharing and port credits; no fake renderer/driver settings are added.
 - Same settings values saved in the existing `racer` preferences, with one-time migration of old 21:9 index 2 to index 4.
-- During a race, Start and the touch menu button send the original N64 Start input and open FrostFrontend after Racer has had time to draw its pause menu. Racer handles pausing and keeps its menu open after FrostFrontend closes. Select sends the original Start input only.
+- While the race timer is advancing, Start and the touch menu button send the original N64 Start input and open FrostFrontend after Racer has had time to draw its pause menu. Start opens FrostFrontend directly from the game's menus. Racer keeps its pause menu open after FrostFrontend closes. Select sends the original Start input only.
+- The Controls menu maps N64 L to L1 by default. It cycles the race map and progress displays.
 - The shared FrostFrontend test submodule now has the preview-inspired **left-hand sidebar** and **right settings panel**. Changes remain on the shared library feature branch until device testing.
 - FrostFrontend captures player input while Racer continues to render. The D-pad and left stick move between the sidebar and options. A selects or cycles forward, and X cycles a setting backward.
 
@@ -33,6 +34,7 @@
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
 - Aspect and resolution changes replace RT64 render targets after both GPU queues finish using them.
 - On Android, RT64 reserves framebuffer coverage for triangles crossing the camera plane and leaves their final clipping to the GPU. Race and menu visuals need verification on the Odin.
+- RT64 accounts for the shape of Racer's interlaced pixels in both 3D projection and raster clipping when widening the image.
 - RT64 skips frame matching when rendering a native frame. A workload without a match uploads its original transforms. Original refresh has reduced clipping in device testing.
 - The widescreen HUD moves the side panels, minimap and instruments together and extends the trim around the centred timer. The layout is based on the two alternating race workloads captured on the Odin.
 

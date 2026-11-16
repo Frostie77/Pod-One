@@ -226,6 +226,7 @@ public final class PodOneSettingsActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        e = PodOneControls.normalizeStart(e);
         if (touchEditor != null && touchEditor.isEditing()) return touchEditor.handleEditorKey(e);
         if (frontend != null && frontend.isOpen()) return frontend.handleKeyEvent(e);
         return super.dispatchKeyEvent(e);

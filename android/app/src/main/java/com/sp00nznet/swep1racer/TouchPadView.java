@@ -27,7 +27,7 @@ public final class TouchPadView extends View {
     static final int BTN_CU = 0x0008, BTN_CD = 0x0004, BTN_CL = 0x0002, BTN_CR = 0x0001;
 
     // Controls 0..8: the buttons (bit, label). Racer's own control list (ROM): A accel, B brake, R repair,
-    // C camera/roll/roll/look back, Z slide. L is not used by Racer, so it has no button (2026-10-21).
+    // C camera/roll/roll/look back, Z slide. N64 L cycles race map and progress displays on a gamepad.
     // Control 9: the stick. Control 10: BOOST.
     private static final int[] BITS = { BTN_A, BTN_B, BTN_Z, BTN_R, BTN_START, BTN_CU, BTN_CD, BTN_CL, BTN_CR };
     private static final String[] LABEL = { "A", "B", "Z", "R", "START", "C^", "Cv", "C<", "C>" };

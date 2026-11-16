@@ -6,6 +6,13 @@
 #include "hle/rt64_framebuffer_pair.h"
 
 namespace podone_hud {
+    bool race_clock_running();
+    void note_original_start();
+
+    bool tracing(uint64_t workload);
+    void trace_layout(uint64_t workload, unsigned pair, unsigned width, unsigned height, float x_scale, float y_scale,
+                      float source_aspect, float target_aspect, bool race_hud, float offset, unsigned anchored);
+
     constexpr int framebuffer_width = 320;
     constexpr int left_margin = 8;
     constexpr int right_margin = framebuffer_width - left_margin;

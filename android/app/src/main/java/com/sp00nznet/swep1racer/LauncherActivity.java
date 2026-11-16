@@ -133,8 +133,10 @@ public final class LauncherActivity extends Activity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        event = PodOneControls.normalizeStart(event);
         int code = event.getKeyCode();
-        if (code == KeyEvent.KEYCODE_BUTTON_B || PodOneControls.isControllerBack(event)) return true;
+        if (code == KeyEvent.KEYCODE_BUTTON_START || code == KeyEvent.KEYCODE_BUTTON_B
+                || PodOneControls.isControllerBack(event)) return true;
         if (code == KeyEvent.KEYCODE_BUTTON_A || code == KeyEvent.KEYCODE_BUTTON_Y) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 if (code == KeyEvent.KEYCODE_BUTTON_Y) pickRom();

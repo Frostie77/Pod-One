@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 
 final class PodOneControls {
+    private static final int START_SCAN_CODE = 315;
     // Native get_input() consumes these keys in this order. The IDs also back saved mappings.
     private static final List<FrostButtonMapper.Action> ACTIONS = Arrays.asList(
         new FrostButtonMapper.Action("accelerate", "Accelerate (N64 A)", KeyEvent.KEYCODE_BUTTON_A),
@@ -20,7 +21,8 @@ final class PodOneControls {
         new FrostButtonMapper.Action("camera_up", "C-Up (Change Camera)", KeyEvent.KEYCODE_BUTTON_Y),
         new FrostButtonMapper.Action("camera_down", "C-Down (Look Back)", KeyEvent.KEYCODE_BUTTON_THUMBL),
         new FrostButtonMapper.Action("camera_left", "C-Left (Roll Left)", KeyEvent.KEYCODE_BUTTON_X),
-        new FrostButtonMapper.Action("camera_right", "C-Right (Roll Right)", KeyEvent.KEYCODE_BUTTON_THUMBR)
+        new FrostButtonMapper.Action("camera_right", "C-Right (Roll Right)", KeyEvent.KEYCODE_BUTTON_THUMBR),
+        new FrostButtonMapper.Action("cycle_map", "Cycle Map Display (N64 L)", KeyEvent.KEYCODE_BUTTON_L1)
     );
     private static final String[] DESCRIPTIONS = {
         "Apply thrust to accelerate the podracer.",
@@ -30,7 +32,8 @@ final class PodOneControls {
         "Cycle through the race camera views.",
         "Look behind your podracer during a race.",
         "Roll the podracer to the left to fit through narrow gaps.",
-        "Roll the podracer to the right to fit through narrow gaps."
+        "Roll the podracer to the right to fit through narrow gaps.",
+        "Cycle the race map and progress displays."
     };
 
     private PodOneControls() {}
@@ -62,7 +65,19 @@ final class PodOneControls {
 
     static boolean isControllerBack(KeyEvent event) {
         int keyCode = event.getKeyCode();
-        if (keyCode != KeyEvent.KEYCODE_BACK && keyCode != KeyEvent.KEYCODE_ESCAPE) return false;
+        return (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) && isController(event);
+    }
+
+    static KeyEvent normalizeStart(KeyEvent event) {
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_BUTTON_START) return event;
+        if (event.getScanCode() != START_SCAN_CODE && !(code == KeyEvent.KEYCODE_MENU && isController(event))) return event;
+        return new KeyEvent(event.getDownTime(), event.getEventTime(), event.getAction(),
+                KeyEvent.KEYCODE_BUTTON_START, event.getRepeatCount(), event.getMetaState(),
+                event.getDeviceId(), event.getScanCode(), event.getFlags(), event.getSource());
+    }
+
+    private static boolean isController(KeyEvent event) {
         if (event.isFromSource(InputDevice.SOURCE_GAMEPAD) || event.isFromSource(InputDevice.SOURCE_JOYSTICK))
             return true;
         InputDevice device = event.getDevice();

@@ -31,7 +31,7 @@ set(new_bounds [=[
             const float aw = transformed[globalIndices[0]].w;
             const float bw = transformed[globalIndices[1]].w;
             const float cw = transformed[globalIndices[2]].w;
-            crossesCameraPlane = std::min({ aw, bw, cw }) <= 0.0f && std::max({ aw, bw, cw }) >= 0.0f;
+            crossesCameraPlane = std::min({ aw, bw, cw }) <= 0.0f && std::max({ aw, bw, cw }) > 0.0f;
         }
 
         bool visibleTri = true;
@@ -43,18 +43,14 @@ set(old_rect [=[
             for (int i = 0; i < 3; i++) {
 ]=])
 set(new_rect [=[
-            const auto &viewport = viewportStack[viewportStackSize - 1];
-            const FixedRect viewportRect = viewport.rect(clipRatios.data());
             // The bounds and winding of these divided vertices do not describe
             // the clipped polygon. Use conservative coverage and let the GPU clip it.
             FixedRect drawRect;
-            if (crossesCameraPlane) drawRect = viewportRect;
+            if (crossesCameraPlane) drawRect = scissorRect;
             for (int i = 0; i < 3 && !crossesCameraPlane; i++) {
 ]=])
-set(old_intersection [=[            drawRect = scissorRect.intersection(drawRect);]=])
-set(new_intersection [=[            drawRect = viewportRect.intersection(scissorRect.intersection(drawRect));]=])
 
-foreach(section bounds rect intersection)
+foreach(section bounds rect)
     string(FIND "${rt64_rsp}" "${old_${section}}" match_start)
     if (match_start EQUAL -1)
         message(FATAL_ERROR "Pod One's RT64 triangle coverage patch needs to be updated for ${rt64_rsp_source}")
@@ -64,4 +60,5 @@ endforeach()
 
 podone_patch_rt64_source("${rt64_rsp_source}" "${rt64_rsp}")
 include("${CMAKE_CURRENT_LIST_DIR}/PodOneHud.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/PodOneViewport.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PodOneRefresh.cmake")
