@@ -63,7 +63,26 @@ set(new_mapping [=[
         vmaUnmapMemory(device->allocator, allocation);
 ]=])
 
-foreach(section copy mapping)
+set(old_attachment_load [=[
+            // Upgrade the operations to NONE if supported. Fixes the following validation issue: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2349
+            // We prefer to just ignore this potential hazard on older Vulkan versions as it just seems to be an edge case for some hardware.
+            const bool preferNoneForReadOnly = desc.depthAttachmentReadOnly && device->loadStoreOpNoneSupported;
+            VkAttachmentDescription attachment = {};
+            attachment.format = toVk(depthAttachmentViewDesc.format);
+            attachment.samples = VkSampleCountFlagBits(depthAttachment->desc.multisampling.sampleCount);
+            attachment.loadOp = preferNoneForReadOnly ? VK_ATTACHMENT_LOAD_OP_NONE_EXT : VK_ATTACHMENT_LOAD_OP_LOAD;
+]=])
+set(new_attachment_load [=[
+            // Read-only depth testing uses the contents written by the preceding
+            // pass. LOAD_OP_NONE would leave them undefined inside this pass.
+            const bool preferNoneForReadOnly = desc.depthAttachmentReadOnly && device->loadStoreOpNoneSupported;
+            VkAttachmentDescription attachment = {};
+            attachment.format = toVk(depthAttachmentViewDesc.format);
+            attachment.samples = VkSampleCountFlagBits(depthAttachment->desc.multisampling.sampleCount);
+            attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+]=])
+
+foreach(section copy mapping attachment_load)
     string(FIND "${plume}" "${old_${section}}" match_start)
     if(match_start EQUAL -1)
         message(FATAL_ERROR "Pod One's Vulkan transfer patch needs to be updated")

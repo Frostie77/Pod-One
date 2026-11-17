@@ -2,6 +2,22 @@ set(rt64_framebuffer_source "${RT64_DIR}/src/render/rt64_framebuffer_renderer.cp
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_framebuffer_source}")
 file(READ "${rt64_framebuffer_source}" rt64_framebuffer)
 
+set(old_depth_access [=[
+        const RenderTextureLayout depthReadState = RenderTextureLayout::DEPTH_READ;
+        const RenderTextureLayout depthWriteState = RenderTextureLayout::DEPTH_WRITE;
+        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(fbStorage->depthTarget->texture.get(), readOnly ? depthReadState : RenderTextureLayout::DEPTH_WRITE));
+]=])
+set(new_depth_access [=[
+        // Ending the render pass stores both attachments. The next pass loads
+        // the same color target even though its image layout stays unchanged.
+        const RenderTarget *color = fbStorage->colorTarget;
+        const RenderTextureBarrier attachments[] = {
+            { fbStorage->depthTarget->texture.get(), readOnly ? RenderTextureLayout::DEPTH_READ : RenderTextureLayout::DEPTH_WRITE },
+            { color ? color->texture.get() : nullptr, RenderTextureLayout::COLOR_WRITE }
+        };
+        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, attachments, color ? 2u : 1u);
+]=])
+
 set(old_include [=[#include "rt64_framebuffer_renderer.h"]=])
 set(new_include [=[
 #include "rt64_framebuffer_renderer.h"
@@ -73,10 +89,10 @@ set(new_finish [=[
         checkRasterScene(rasterScene);
 ]=])
 
-foreach(section include frame projection horizontal call rect scissor finish)
+foreach(section depth_access include frame projection horizontal call rect scissor finish)
     string(FIND "${rt64_framebuffer}" "${old_${section}}" match_start)
     if (match_start EQUAL -1)
-        message(FATAL_ERROR "Pod One's HUD patch needs to be updated for ${rt64_framebuffer_source}")
+        message(FATAL_ERROR "Pod One's ${section} patch needs to be updated for ${rt64_framebuffer_source}")
     endif()
     string(REPLACE "${old_${section}}" "${new_${section}}" rt64_framebuffer "${rt64_framebuffer}")
 endforeach()
