@@ -253,9 +253,10 @@ static SDL_Window* g_window = nullptr;
 static SDL_GameController* g_controller = nullptr;
 static std::atomic<bool> g_frontend_open{false};
 #if defined(__ANDROID__)
+static std::atomic<bool> g_original_start_pressed{false};
 static std::atomic<uint64_t> g_guest_vi_count{0};
-static std::atomic<uint64_t> g_start_ready_vi{0};
-static std::atomic<int> g_start_reads{0};
+static std::atomic<uint64_t> g_pause_ready_vi{0};
+static std::atomic<int> g_pause_reads{0};
 #endif
 // Same order as PodOneControls.java: A, B, Z, R, L, C directions, D-pad directions.
 static std::atomic<int> g_gamepad_keys[] = {96, 97, 104, 103, 102, 100, 106, 99, 107, 19, 20, 21, 22};
@@ -436,7 +437,16 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetTouchPad(JNIEnv*, jclas
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetFrontendOpen(JNIEnv*, jclass, jboolean open) {
     g_frontend_open.store(open == JNI_TRUE);
-    if (open == JNI_TRUE) g_start_reads.store(0);
+    if (open == JNI_TRUE) {
+        g_pause_reads.store(0);
+        g_original_start_pressed.store(false);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetOriginalStartPressed(JNIEnv*, jclass, jboolean pressed) {
+    g_original_start_pressed.store(pressed == JNI_TRUE);
+    if (pressed == JNI_TRUE) podone_hud::note_original_start();
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -466,16 +476,16 @@ static uint32_t find_local_racer() {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeQueueOriginalStart(JNIEnv*, jclass, jboolean race_only) {
-    if (race_only == JNI_TRUE && (find_local_racer() == 0 || !podone_hud::race_clock_running())) return JNI_FALSE;
-    g_start_ready_vi.store(0);
-    g_start_reads.store(2);
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeQueueRacePause(JNIEnv*, jclass) {
+    if (find_local_racer() == 0 || !podone_hud::race_clock_running()) return JNI_FALSE;
+    g_pause_ready_vi.store(0);
+    g_pause_reads.store(2);
     return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeOriginalStartReady(JNIEnv*, jclass) {
-    const uint64_t ready_vi = g_start_ready_vi.load();
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeRacePauseReady(JNIEnv*, jclass) {
+    const uint64_t ready_vi = g_pause_ready_vi.load();
     return ready_vi > 0 && g_guest_vi_count.load() >= ready_vi ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -565,11 +575,11 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     }
 
 #if defined(__ANDROID__)
-    int remaining = g_start_reads.load();
-    if (remaining > 0 && g_start_reads.compare_exchange_strong(remaining, remaining - 1)) {
+    if (g_original_start_pressed.load()) *buttons |= 0x1000;
+    int remaining = g_pause_reads.load();
+    if (remaining > 0 && g_pause_reads.compare_exchange_strong(remaining, remaining - 1)) {
         *buttons |= 0x1000;
-        // Racer continues rendering behind FrostFrontend once it has read Start.
-        if (remaining == 1) g_start_ready_vi.store(g_guest_vi_count.load() + 1);
+        if (remaining == 1) g_pause_ready_vi.store(g_guest_vi_count.load() + 1);
     }
 #endif
 

@@ -39,8 +39,9 @@ public final class SWE1RacerActivity extends SDLActivity {
                                       int msaa, int downsample, int refresh);
     static native void nativeSetFrontendOpen(boolean open);
     static native void nativeSetGamepadKeys(int[] androidKeycodes);
-    static native boolean nativeQueueOriginalStart(boolean raceOnly);
-    static native boolean nativeOriginalStartReady();
+    static native void nativeSetOriginalStartPressed(boolean pressed);
+    static native boolean nativeQueueRacePause();
+    static native boolean nativeRacePauseReady();
     static native void nativeSetAudioBuffer(int frames);
     static native float nativeGameFps();
     static native float nativeDisplayListRate();
@@ -52,10 +53,10 @@ public final class SWE1RacerActivity extends SDLActivity {
     private PodOneFrontend menu;
     private TextView fpsView;
     private long pauseMenuDeadline;
-    private final Runnable openStackedPause = new Runnable() {
+    private final Runnable openAfterPause = new Runnable() {
         @Override public void run() {
             if (pauseMenuDeadline == 0 || isFinishing() || menu == null) return;
-            if (!nativeOriginalStartReady() && SystemClock.uptimeMillis() < pauseMenuDeadline) {
+            if (!nativeRacePauseReady() && SystemClock.uptimeMillis() < pauseMenuDeadline) {
                 handler.postDelayed(this, 16);
                 return;
             }
@@ -168,9 +169,10 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus) {
+        if (!hasFocus && menu != null) {
+            nativeSetOriginalStartPressed(false);
             pauseMenuDeadline = 0;
-            handler.removeCallbacks(openStackedPause);
+            handler.removeCallbacks(openAfterPause);
         }
         if (hasFocus) {
             if (menu != null) menu.reapplyMappings();
@@ -183,10 +185,9 @@ public final class SWE1RacerActivity extends SDLActivity {
 
     private void openFrontend() {
         if (menu == null || menu.isOpen() || pauseMenuDeadline != 0) return;
-        if (nativeQueueOriginalStart(true)) {
-            // Let Racer process Start and draw its pause menu before showing FrostFrontend.
+        if (nativeQueueRacePause()) {
             pauseMenuDeadline = SystemClock.uptimeMillis() + 600;
-            handler.postDelayed(openStackedPause, 16);
+            handler.postDelayed(openAfterPause, 16);
         } else {
             menu.open();
         }
@@ -194,19 +195,24 @@ public final class SWE1RacerActivity extends SDLActivity {
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         event = PodOneControls.normalizeStart(event);
-        if (PodOneControls.isControllerBack(event)) return true;
-        if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
         final int code = event.getKeyCode();
-        if (code == KeyEvent.KEYCODE_BUTTON_SELECT && menu != null) {
+        if (code == KeyEvent.KEYCODE_BUTTON_START && event.getAction() == KeyEvent.ACTION_UP && menu != null)
+            nativeSetOriginalStartPressed(false);
+        if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
+        if (menu != null && PodOneControls.isControllerBack(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (menu.isOpen()) menu.back();
+                else openFrontend();
+            }
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_BUTTON_START && menu != null) {
+            if (menu.isOpen() && menu.view().isCapturingButton()) return menu.handleKeyEvent(event);
             if (!menu.isOpen() && pauseMenuDeadline == 0 && event.getAction() == KeyEvent.ACTION_DOWN
-                    && event.getRepeatCount() == 0) nativeQueueOriginalStart(false);
+                    && event.getRepeatCount() == 0) nativeSetOriginalStartPressed(true);
             return true;
         }
         if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
-        if (code == KeyEvent.KEYCODE_BUTTON_START) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) openFrontend();
-            return true;
-        }
         if (code == KeyEvent.KEYCODE_BACK) {
             if (event.getAction() == KeyEvent.ACTION_UP) onBackPressed();
             return true;
@@ -249,7 +255,7 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacks(fpsTick);
-        handler.removeCallbacks(openStackedPause);
+        handler.removeCallbacks(openAfterPause);
         if (menu != null) {
             menu.destroy();
             nativeSetFrontendOpen(false);

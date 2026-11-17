@@ -29,9 +29,9 @@ namespace {
         constexpr uint64_t prime = 1099511628211ull;
         for (unsigned f = 0; f < workload.fbPairCount; ++f) {
             const auto& pair = workload.fbPairs[f];
-            if (pair.colorImage.width != podone_hud::framebuffer_width || !podone_hud::has_race_hud(pair)) continue;
+            if (pair.colorImage.width != podone_hud::framebuffer_width || !pair.depthWrite) continue;
             uint64_t signature = basis;
-            bool found_digits = false;
+            unsigned digits = 0;
             for (unsigned p = 0; p < pair.projectionCount; ++p) {
                 const auto& projection = pair.projections[p];
                 if (projection.type != RT64::Projection::Type::Rectangle) continue;
@@ -43,19 +43,18 @@ namespace {
                         const auto& load = workload.drawData.loadOperations[desc.loadIndex + i];
                         if (load.type != RT64::LoadOperation::Type::TLUT) timer_font = load.texture.address == timer_atlas;
                     }
-                    if (!timer_font || !podone_hud::hud_rectangle(desc)
-                        || !podone_hud::inside(desc.rect, 125, 46, 195, 80)) continue;
+                    if (!timer_font || !podone_hud::timer_digit(desc)) continue;
 
                     const size_t uv = size_t(call.meshDesc.rawVertexStart) * 2;
                     const auto& coords = workload.drawData.triTcFloats;
                     if (uv + 1 >= coords.size()) continue;
-                    found_digits = true;
+                    ++digits;
                     signature = (signature ^ uint32_t(desc.rect.ulx)) * prime;
                     signature = (signature ^ uint32_t(std::lround(coords[uv] * 32.0f))) * prime;
                     signature = (signature ^ uint32_t(std::lround(coords[uv + 1] * 32.0f))) * prime;
                 }
             }
-            if (found_digits) return signature;
+            if (digits >= 6) return signature;
         }
         return 0;
     }

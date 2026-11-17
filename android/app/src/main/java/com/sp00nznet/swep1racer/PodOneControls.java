@@ -12,6 +12,7 @@ import java.util.List;
 
 final class PodOneControls {
     private static final int START_SCAN_CODE = 315;
+    private static final int BACK_SCAN_CODE = 158;
     // Native get_input() consumes these keys in this order. The IDs also back saved mappings.
     private static final List<FrostButtonMapper.Action> ACTIONS = Arrays.asList(
         new FrostButtonMapper.Action("accelerate", "Accelerate (N64 A)", KeyEvent.KEYCODE_BUTTON_A),
@@ -73,7 +74,8 @@ final class PodOneControls {
 
     static boolean isControllerBack(KeyEvent event) {
         int keyCode = event.getKeyCode();
-        return (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) && isController(event);
+        return (event.getScanCode() == BACK_SCAN_CODE || keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_ESCAPE) && isController(event);
     }
 
     static KeyEvent normalizeStart(KeyEvent event) {
