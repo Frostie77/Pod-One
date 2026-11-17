@@ -13,6 +13,7 @@
 #include <SDL_system.h>
 
 #include "hle/rt64_workload_queue.h"
+#include "podone_geometry.h"
 #include "podone_hud.h"
 
 namespace {
@@ -21,6 +22,9 @@ namespace {
     constexpr unsigned capture_workloads = 2;
     constexpr unsigned max_calls_per_workload = 240;
     std::array<std::atomic<uint64_t>, capture_workloads> trace_workloads{};
+    std::atomic<uint64_t> geometry_workload{0};
+    std::string geometry_report_path;
+    std::string geometry_request;
     using Clock = std::chrono::steady_clock;
     using namespace std::chrono_literals;
     constexpr auto clock_update_window = 250ms;
@@ -266,7 +270,9 @@ namespace {
                            << " cull " << ((desc.geometryMode & desc.cullBothMask) != 0)
                            << " no_near_clip " << desc.NoN << " scissor";
                     rect(desc.scissorRect);
-                    report << '\n';
+                    report << " other_mode " << std::hex << desc.otherMode.H << ' ' << desc.otherMode.L
+                           << " combiner " << desc.colorCombiner.H << ' ' << desc.colorCombiner.L << std::dec
+                           << " blend_alpha " << float(desc.rdpParams.blendColor.w) << '\n';
                     for (size_t j = begin; j + 2 < end; j += 3) {
                         report << "tri";
                         for (size_t k = j; k < j + 3; ++k) report << ' ' << draw.faceIndices[k];
@@ -297,23 +303,131 @@ namespace {
         static char last_request[PROP_VALUE_MAX] = {};
         char request[PROP_VALUE_MAX] = {};
         if (__system_property_get("debug.podone.geometry", request) == 0 || std::strcmp(request, "0") == 0
-                || std::strcmp(last_request, request) == 0 || workload.drawData.faceIndices.empty()) return;
+                || std::strcmp(last_request, request) == 0 || workload.drawData.faceIndices.empty()
+                || geometry_workload.load() != 0) return;
         std::strcpy(last_request, request);
 
         const char* storage = SDL_AndroidGetInternalStoragePath();
         if (storage == nullptr) return;
-        const std::string report_path = std::string(storage) + "/pod-one-geometry.txt";
-        const std::string pending_path = report_path + ".tmp";
+        geometry_report_path = std::string(storage) + "/pod-one-geometry.txt";
+        geometry_request = request;
+        const std::string pending_path = geometry_report_path + ".tmp";
         std::ofstream report(pending_path);
         write_geometry(report, workload);
         report.close();
-        if (report && std::rename(pending_path.c_str(), report_path.c_str()) == 0) {
-            __android_log_print(ANDROID_LOG_INFO, geometry_tag, "saved request=%s", request);
+        if (report) {
+            // Publish the request only after the CPU report is ready to append to.
+            geometry_workload.store(workload.workloadId);
         } else {
             std::remove(pending_path.c_str());
             __android_log_print(ANDROID_LOG_ERROR, geometry_tag, "capture failed request=%s", request);
         }
     }
+}
+
+podone_geometry::GpuCapture::GpuCapture(RT64::RenderWorker& worker, const RT64::Workload& workload,
+                                        float frame_weight, float aspect_scale)
+    : worker(worker), frame_weight(frame_weight), aspect_scale(aspect_scale) {
+    if (workload.workloadId == 0 || workload.workloadId != geometry_workload.load()) return;
+    workload_id = workload.workloadId;
+    vertex_count = workload.drawData.vertexCount();
+    const uint64_t block_size = uint64_t(vertex_count) * 4 * sizeof(float);
+    const auto& output = workload.outputBuffers;
+    if (block_size == 0 || !output.screenPosBuffer.buffer || !output.shadedColBuffer.buffer) return;
+    vertices = worker.device->createBuffer(RenderBufferDesc::ReadbackBuffer(2 * block_size));
+    if (!vertices) return;
+
+    const RenderBufferBarrier barriers[] = {
+        { output.screenPosBuffer.buffer.get(), RenderBufferAccess::READ },
+        { output.shadedColBuffer.buffer.get(), RenderBufferAccess::READ },
+        { vertices.get(), RenderBufferAccess::WRITE }
+    };
+    worker.commandList->barriers(RenderBarrierStage::COPY, barriers, uint32_t(std::size(barriers)));
+    worker.commandList->copyBufferRegion(vertices->at(0), output.screenPosBuffer.buffer->at(0), block_size);
+    worker.commandList->copyBufferRegion(vertices->at(block_size), output.shadedColBuffer.buffer->at(0), block_size);
+    worker.commandList->barriers(RenderBarrierStage::GRAPHICS, barriers, 2);
+    worker.commandList->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(vertices.get(), RenderBufferAccess::READ));
+}
+
+void podone_geometry::GpuCapture::before_draw(const RT64::RenderTarget& depth, unsigned pair) {
+    if (workload_id == 0 || depth_samples || depth.format != RenderFormat::D32_FLOAT
+            || depth.multisampling.sampleCount != 1 || !depth.texture) return;
+    const uint64_t pixels = uint64_t(depth.width) * depth.height;
+    if (pixels == 0 || pixels > 8 * 1024 * 1024) return;
+    depth_samples = worker.device->createBuffer(RenderBufferDesc::ReadbackBuffer(2 * pixels * sizeof(float)));
+    if (!depth_samples) return;
+    depth_width = depth.width;
+    depth_height = depth.height;
+    depth_scale_x = depth.resolutionScale.x;
+    depth_scale_y = depth.resolutionScale.y;
+    depth_pair = pair;
+    copy_depth(depth, 0);
+}
+
+void podone_geometry::GpuCapture::after_draw(const RT64::RenderTarget& depth, unsigned pair) {
+    if (!depth_samples || pair != depth_pair) return;
+    copy_depth(depth, 1);
+    worker.commandList->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(depth_samples.get(), RenderBufferAccess::READ));
+    depth_after = true;
+}
+
+void podone_geometry::GpuCapture::copy_depth(const RT64::RenderTarget& depth, unsigned layer) {
+    const uint64_t layer_bytes = uint64_t(depth_width) * depth_height * sizeof(float);
+    const RenderBufferBarrier buffer(depth_samples.get(), RenderBufferAccess::WRITE);
+    const RenderTextureBarrier texture(depth.texture.get(), RenderTextureLayout::COPY_SOURCE);
+    worker.commandList->barriers(RenderBarrierStage::COPY, &buffer, 1, &texture, 1);
+    const auto src = RenderTextureCopyLocation::Subresource(depth.texture.get());
+    const auto dst = RenderTextureCopyLocation::PlacedFootprint(depth_samples.get(), RenderFormat::D32_FLOAT,
+        depth_width, depth_height, 1, depth_width, layer_bytes * layer);
+    worker.commandList->copyTextureRegion(dst, src);
+}
+
+void podone_geometry::GpuCapture::finish() {
+    if (workload_id == 0) return;
+    const std::string pending_path = geometry_report_path + ".tmp";
+    std::ofstream report(pending_path, std::ios::app);
+    report.precision(std::numeric_limits<float>::max_digits10);
+    report << "gpu_frame " << workload_id << " weight " << frame_weight << " aspect_scale " << aspect_scale << '\n';
+    if (vertices) {
+        const RenderRange range(0, uint64_t(vertex_count) * 8 * sizeof(float));
+        const auto* values = static_cast<const float*>(vertices->map(0, &range));
+        if (values) {
+            report << "gpu_vertex_columns index screen_x screen_y screen_z clip_w color_r color_g color_b color_a\n";
+            const float* colors = values + size_t(vertex_count) * 4;
+            for (uint32_t i = 0; i < vertex_count; ++i) {
+                report << "gpu_vertex " << i;
+                for (unsigned j = 0; j < 4; ++j) report << ' ' << values[size_t(i) * 4 + j];
+                for (unsigned j = 0; j < 4; ++j) report << ' ' << colors[size_t(i) * 4 + j];
+                report << '\n';
+            }
+            vertices->unmap();
+        }
+    }
+    if (depth_after) {
+        const size_t pixels = size_t(depth_width) * depth_height;
+        const RenderRange range(0, 2 * pixels * sizeof(float));
+        const auto* values = static_cast<const float*>(depth_samples->map(0, &range));
+        if (values) {
+            constexpr unsigned step = 8;
+            report << "gpu_depth pair " << depth_pair << " width " << depth_width << " height " << depth_height
+                   << " scale " << depth_scale_x << ' ' << depth_scale_y << " step " << step << '\n';
+            for (unsigned y = step / 2; y < depth_height; y += step) {
+                for (unsigned x = step / 2; x < depth_width; x += step) {
+                    const size_t i = size_t(y) * depth_width + x;
+                    report << "gpu_depth_sample " << x << ' ' << y << ' ' << values[i] << ' ' << values[pixels + i] << '\n';
+                }
+            }
+            depth_samples->unmap();
+        }
+    }
+    report.close();
+    if (report && std::rename(pending_path.c_str(), geometry_report_path.c_str()) == 0) {
+        __android_log_print(ANDROID_LOG_INFO, geometry_tag, "saved request=%s", geometry_request.c_str());
+    } else {
+        std::remove(pending_path.c_str());
+        __android_log_print(ANDROID_LOG_ERROR, geometry_tag, "capture failed request=%s", geometry_request.c_str());
+    }
+    geometry_workload.store(0);
 }
 
 bool podone_hud::race_clock_running() {

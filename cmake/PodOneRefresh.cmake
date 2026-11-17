@@ -16,6 +16,37 @@ podone_patch_rt64_source("${rt64_transforms_source}" "${rt64_transforms}")
 set(rt64_workloads_source "${RT64_DIR}/src/hle/rt64_workload_queue.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_workloads_source}")
 file(READ "${rt64_workloads_source}" rt64_workloads)
+set(old_capture_include [=[#include "rt64_workload_queue.h"]=])
+set(new_capture_include [=[
+#include "rt64_workload_queue.h"
+#include "podone_geometry.h"
+]=])
+set(old_capture_setup [=[
+            // Record all framebuffer pairs.
+]=])
+set(new_capture_setup [=[
+            podone_geometry::GpuCapture capture(*ext.workloadGraphicsWorker, workload, curFrameWeight, workloadConfig.aspectRatioScale);
+
+            // Record all framebuffer pairs.
+]=])
+set(old_capture_depth [=[                    framebufferRenderer->recordFramebuffer(ext.workloadGraphicsWorker, framebufferIndex++);]=])
+set(new_capture_depth [=[
+                    const bool captureDepth = colorTarget && depthTarget && fbPair.depthWrite;
+                    if (captureDepth) capture.before_draw(*depthTarget, f);
+                    framebufferRenderer->recordFramebuffer(ext.workloadGraphicsWorker, framebufferIndex++);
+                    if (captureDepth) capture.after_draw(*depthTarget, f);
+]=])
+set(old_capture_finish [=[
+            workerMutex.unlock();
+
+            // Update the GPU profiler with the results from the timestamps of the frame.
+]=])
+set(new_capture_finish [=[
+            workerMutex.unlock();
+            capture.finish();
+
+            // Update the GPU profiler with the results from the timestamps of the frame.
+]=])
 set(old_projection [=[        const bool processProjections = aspectRatioAdjustment || prevFrame.matched|| curFrame.isDebuggerCameraEnabled(*this);]=])
 set(new_projection [=[        const bool processProjections = aspectRatioAdjustment || (curFrame.matched && prevFrame.matched) || curFrame.isDebuggerCameraEnabled(*this);]=])
 set(old_transforms [=[        const bool processTransforms = prevFrame.matched;]=])
@@ -58,7 +89,7 @@ set(new_ticks [=[
                 }
 ]=])
 
-foreach(section projection transforms vertices match ticks)
+foreach(section projection transforms vertices match ticks capture_include capture_setup capture_depth capture_finish)
     string(FIND "${rt64_workloads}" "${old_${section}}" match_start)
     if(match_start EQUAL -1)
         message(FATAL_ERROR "Pod One's RT64 frame matching patch needs to be updated")
