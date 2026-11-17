@@ -34,7 +34,10 @@ set(new_capture_depth [=[
                     const bool captureDepth = colorTarget && depthTarget && fbPair.depthWrite;
                     if (captureDepth) capture.before_draw(*depthTarget, f);
                     framebufferRenderer->recordFramebuffer(ext.workloadGraphicsWorker, framebufferIndex++);
-                    if (captureDepth) capture.after_draw(*depthTarget, f);
+                    if (captureDepth) {
+                        capture.after_draw(*depthTarget, f);
+                        capture.capture_color(*colorTarget, f, colorImg.address);
+                    }
 ]=])
 set(old_capture_finish [=[
             workerMutex.unlock();

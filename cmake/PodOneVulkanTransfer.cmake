@@ -11,15 +11,15 @@ set(new_copy [=[
             vkCmdCopyBufferToImage(vk, srcBuffer->vk, dstTexture->vk, toImageLayout(dstTexture->textureLayout), 1, &imageCopy);
         }
         else if ((dstLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT) && (srcLocation.type == RenderTextureCopyType::SUBRESOURCE)) {
-            // Pod One reads back a single-sample D32 depth target for clipping diagnosis.
+            // Read back single-sample color or depth for a frame capture.
             assert(dstBuffer != nullptr && srcTexture != nullptr);
-            assert(srcTexture->desc.format == RenderFormat::D32_FLOAT && srcTexture->desc.multisampling.sampleCount == 1);
             assert(dstX == 0 && dstY == 0 && dstZ == 0 && srcBox == nullptr);
             const auto &footprint = dstLocation.placedFootprint;
+            assert(srcTexture->desc.format == footprint.format && srcTexture->desc.multisampling.sampleCount == 1);
             VkBufferImageCopy imageCopy = {};
             imageCopy.bufferOffset = footprint.offset;
             imageCopy.bufferRowLength = footprint.rowWidth;
-            imageCopy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            imageCopy.imageSubresource.aspectMask = toViewAspectFlags(srcTexture->desc.flags);
             imageCopy.imageSubresource.baseArrayLayer = srcLocation.subresource.arrayIndex;
             imageCopy.imageSubresource.layerCount = 1;
             imageCopy.imageSubresource.mipLevel = srcLocation.subresource.mipLevel;

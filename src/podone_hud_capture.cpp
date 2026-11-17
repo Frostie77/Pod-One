@@ -382,6 +382,37 @@ void podone_geometry::GpuCapture::copy_depth(const RT64::RenderTarget& depth, un
     worker.commandList->copyTextureRegion(dst, src);
 }
 
+void podone_geometry::GpuCapture::capture_color(const RT64::RenderTarget& color, unsigned pair, uint32_t address) {
+    if (workload_id == 0 || color_samples || !color.texture || color.multisampling.sampleCount != 1
+            || (depth_samples && pair != depth_pair)) return;
+    unsigned channel_bytes;
+    if (color.format == RenderFormat::R8G8B8A8_UNORM) {
+        channel_bytes = 1;
+    } else if (color.format == RenderFormat::R16G16B16A16_UNORM) {
+        channel_bytes = 2;
+    } else {
+        return;
+    }
+    const uint64_t pixels = uint64_t(color.width) * color.height;
+    if (pixels == 0 || pixels > 8 * 1024 * 1024) return;
+    color_samples = worker.device->createBuffer(RenderBufferDesc::ReadbackBuffer(pixels * 4 * channel_bytes));
+    if (!color_samples) return;
+    color_width = color.width;
+    color_height = color.height;
+    color_address = address;
+    color_pair = pair;
+    color_channel_bytes = channel_bytes;
+
+    const RenderBufferBarrier buffer(color_samples.get(), RenderBufferAccess::WRITE);
+    const RenderTextureBarrier texture(color.texture.get(), RenderTextureLayout::COPY_SOURCE);
+    worker.commandList->barriers(RenderBarrierStage::COPY, &buffer, 1, &texture, 1);
+    const auto src = RenderTextureCopyLocation::Subresource(color.texture.get());
+    const auto dst = RenderTextureCopyLocation::PlacedFootprint(color_samples.get(), color.format,
+        color_width, color_height, 1, color_width);
+    worker.commandList->copyTextureRegion(dst, src);
+    worker.commandList->barriers(RenderBarrierStage::COPY, RenderBufferBarrier(color_samples.get(), RenderBufferAccess::READ));
+}
+
 void podone_geometry::GpuCapture::finish() {
     if (workload_id == 0) return;
     const std::string pending_path = geometry_report_path + ".tmp";
@@ -418,6 +449,34 @@ void podone_geometry::GpuCapture::finish() {
                 }
             }
             depth_samples->unmap();
+        }
+    }
+    if (color_samples) {
+        const unsigned pixel_bytes = color_channel_bytes * 4;
+        const RenderRange range(0, uint64_t(color_width) * color_height * pixel_bytes);
+        const auto* values = static_cast<const uint8_t*>(color_samples->map(0, &range));
+        if (values) {
+            // Sample from the same output and write packed RRGGBB rows so the
+            // report can still be copied with adb as a single text file.
+            const unsigned step = std::max(1u, (std::max(color_width, color_height) + 959u) / 960u);
+            report << "gpu_color pair " << color_pair << " address " << std::hex << color_address << std::dec
+                   << " width " << color_width << " height " << color_height << " step " << step << '\n';
+            constexpr char hex[] = "0123456789abcdef";
+            std::string row;
+            row.reserve(6 * ((color_width + step - 1) / step));
+            for (unsigned y = 0; y < color_height; y += step) {
+                row.clear();
+                for (unsigned x = 0; x < color_width; x += step) {
+                    const auto* pixel = values + (size_t(y) * color_width + x) * pixel_bytes;
+                    for (unsigned channel = 0; channel < 3; ++channel) {
+                        const uint8_t value = pixel[(channel + 1) * color_channel_bytes - 1];
+                        row.push_back(hex[value >> 4]);
+                        row.push_back(hex[value & 15]);
+                    }
+                }
+                report << "gpu_color_row " << row << '\n';
+            }
+            color_samples->unmap();
         }
     }
     report.close();
