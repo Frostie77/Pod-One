@@ -35,10 +35,10 @@ namespace podone_hud {
             && matches(call.scissorRect, left_margin, top_margin, right_margin, 464);
     }
 
-    inline bool timer_digit(const RT64::DrawCall& call) {
+    inline bool timer_digit(const RT64::DrawCall& call, Layout layout) {
         if (!hud_rectangle(call)) return false;
-        // The progress ring puts the race time at the upper right.
-        return inside(call.rect, 122, 42, 199, 82) || inside(call.rect, 202, 50, 280, 98);
+        if (layout == Layout::Minimap) return inside(call.rect, 122, 42, 199, 82);
+        return layout == Layout::ProgressRing && inside(call.rect, 202, 50, 280, 98);
     }
 
     inline unsigned progress_ring_edge(const RT64::FixedRect& rect) {

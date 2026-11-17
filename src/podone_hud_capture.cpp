@@ -3,21 +3,27 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <limits>
+#include <string>
 #include <android/log.h>
 #include <sys/system_properties.h>
+#include <SDL_system.h>
 
 #include "hle/rt64_workload_queue.h"
 #include "podone_hud.h"
 
 namespace {
     constexpr char log_tag[] = "PodOneHud";
+    constexpr char geometry_tag[] = "PodOneGeometry";
     constexpr unsigned capture_workloads = 2;
     constexpr unsigned max_calls_per_workload = 240;
     std::array<std::atomic<uint64_t>, capture_workloads> trace_workloads{};
     using Clock = std::chrono::steady_clock;
     using namespace std::chrono_literals;
+    constexpr auto clock_update_window = 250ms;
     std::atomic<Clock::time_point> last_clock_advance{};
     std::atomic<Clock::time_point> last_original_start{};
 
@@ -25,11 +31,14 @@ namespace {
         // The USA ROM loads its race-timer font atlas once, then picks the
         // digits with texture coordinates. Use native HUD coordinates.
         constexpr uint32_t timer_atlas = 0x0009D8E0;
+        constexpr uint64_t timer_atlas_hash = 0xD665535D5068A63Cull;
         constexpr uint64_t basis = 14695981039346656037ull;
         constexpr uint64_t prime = 1099511628211ull;
         for (unsigned f = 0; f < workload.fbPairCount; ++f) {
             const auto& pair = workload.fbPairs[f];
-            if (pair.colorImage.width != podone_hud::framebuffer_width || !pair.depthWrite) continue;
+            if (pair.colorImage.width != podone_hud::framebuffer_width) continue;
+            const auto layout = podone_hud::race_layout(pair);
+            if (layout == podone_hud::Layout::None) continue;
             uint64_t signature = basis;
             unsigned digits = 0;
             for (unsigned p = 0; p < pair.projectionCount; ++p) {
@@ -43,7 +52,9 @@ namespace {
                         const auto& load = workload.drawData.loadOperations[desc.loadIndex + i];
                         if (load.type != RT64::LoadOperation::Type::TLUT) timer_font = load.texture.address == timer_atlas;
                     }
-                    if (!timer_font || !podone_hud::timer_digit(desc)) continue;
+                    if (!podone_hud::timer_digit(desc, layout)) continue;
+                    // A workload can reuse the font tile without a TMEM load.
+                    if (!timer_font && workload.drawData.callTiles[desc.tileIndex].tmemHashOrID != timer_atlas_hash) continue;
 
                     const size_t uv = size_t(call.meshDesc.rawVertexStart) * 2;
                     const auto& coords = workload.drawData.triTcFloats;
@@ -61,14 +72,17 @@ namespace {
 
     void observe_race_clock(const RT64::Workload& workload) {
         static uint64_t last = 0, previous = 0;
+        static Clock::time_point last_sample{};
         const uint64_t current = clock_signature(workload);
-        if (current == 0) {
-            last_clock_advance.store({});
-            last = previous = 0;
-        } else if (current != last) {
-            // The two alternating display lists can repeat the last two
-            // timer values as Racer opens its own pause menu.
-            if (last != 0 && current != previous) last_clock_advance.store(Clock::now());
+        if (current == 0) return;
+
+        const auto now = Clock::now();
+        if (now - last_sample >= clock_update_window) last = previous = 0;
+        last_sample = now;
+        if (current != last) {
+            // Two buffered lists may alternate even in Racer's pause menu.
+            // Require a third value before treating the timer as advancing.
+            if (previous != 0 && current != previous) last_clock_advance.store(now);
             previous = last;
             last = current;
         }
@@ -206,11 +220,105 @@ namespace {
             if (--remaining == 0) __android_log_print(ANDROID_LOG_INFO, log_tag, "end request=%s", request);
         }
     }
+
+    void write_geometry(std::ostream& report, const RT64::Workload& workload) {
+        const auto& draw = workload.drawData;
+        report.precision(std::numeric_limits<float>::max_digits10);
+        report << "workload " << workload.workloadId << " vi " << unsigned(workload.viFbSize.x)
+               << ' ' << unsigned(workload.viFbSize.y) << " aspect " << workload.viAspectRatio << '\n';
+        for (size_t i = 0; i < draw.rspViewports.size(); ++i) {
+            const auto& viewport = draw.rspViewports[i];
+            report << "viewport " << i << " scale " << float(viewport.scale.x) << ' ' << float(viewport.scale.y)
+                   << ' ' << float(viewport.scale.z) << " translate " << float(viewport.translate.x)
+                   << ' ' << float(viewport.translate.y) << ' ' << float(viewport.translate.z) << '\n';
+        }
+
+        auto rect = [&report](const RT64::FixedRect& r) {
+            report << ' ' << r.ulx << ' ' << r.uly << ' ' << r.lrx << ' ' << r.lry;
+        };
+        for (unsigned f = 0; f < workload.fbPairCount; ++f) {
+            const auto& pair = workload.fbPairs[f];
+            report << "pair " << f << " color " << std::hex << pair.colorImage.address
+                   << " depth " << pair.depthImage.address << std::dec << " width " << pair.colorImage.width
+                   << " depth_clear " << pair.fastPaths.clearDepthOnly << " color_bounds";
+            rect(pair.drawColorRect);
+            report << " depth_bounds";
+            rect(pair.drawDepthRect);
+            report << '\n';
+            for (unsigned p = 0; p < pair.projectionCount; ++p) {
+                const auto& projection = pair.projections[p];
+                for (unsigned i = 0; i < projection.gameCallCount; ++i) {
+                    const auto& call = projection.gameCalls[i];
+                    const auto& desc = call.callDesc;
+                    if (pair.fastPaths.clearDepthOnly && desc.otherMode.cycleType() == G_CYC_FILL) {
+                        report << "clear " << std::hex << desc.fillColor << std::dec << " rect";
+                        rect(desc.rect);
+                        report << '\n';
+                    }
+                    if (!projection.usesViewport()) continue;
+
+                    const size_t begin = call.meshDesc.faceIndicesStart;
+                    const size_t end = std::min(draw.faceIndices.size(), begin + size_t(desc.triangleCount) * 3);
+                    report << "call " << p << ' ' << i << " projection " << projection.transformsIndex
+                           << " depth_mode " << desc.otherMode.zMode() << " compare " << desc.otherMode.zCmp()
+                           << " write " << desc.otherMode.zUpd() << " source " << desc.otherMode.zSource()
+                           << " primitive_depth " << float(desc.rdpParams.primDepth.x)
+                           << " cull " << ((desc.geometryMode & desc.cullBothMask) != 0)
+                           << " no_near_clip " << desc.NoN << " scissor";
+                    rect(desc.scissorRect);
+                    report << '\n';
+                    for (size_t j = begin; j + 2 < end; j += 3) {
+                        report << "tri";
+                        for (size_t k = j; k < j + 3; ++k) report << ' ' << draw.faceIndices[k];
+                        report << '\n';
+                    }
+                }
+            }
+        }
+        report << "vertex_columns index viewport screen_x screen_y screen_z clip_x clip_y clip_z clip_w rebuilt_clip_x rebuilt_clip_y rebuilt_clip_z rebuilt_clip_w\n";
+        for (size_t v = 0; v < draw.vertexCount(); ++v) {
+            const auto& position = draw.posScreen[v];
+            const auto& clip = draw.posTransformed[v];
+            const auto& model = draw.worldTransforms[draw.worldIndices[v]];
+            const auto& camera = draw.viewProjTransforms[draw.viewProjIndices[v]];
+            const hlslpp::float4 local(draw.posFloats[v * 3], draw.posFloats[v * 3 + 1], draw.posFloats[v * 3 + 2], 1.0f);
+            const auto rebuilt = hlslpp::mul(local, hlslpp::mul(model, camera));
+            report << "vertex " << v << ' ' << draw.viewProjIndices[v] << ' ' << float(position.x) << ' '
+                   << float(position.y) << ' ' << float(position.z) << ' ' << float(clip.x) << ' ' << float(clip.y)
+                   << ' ' << float(clip.z) << ' ' << float(clip.w) << ' ' << float(rebuilt.x) << ' ' << float(rebuilt.y)
+                   << ' ' << float(rebuilt.z) << ' ' << float(rebuilt.w) << '\n';
+        }
+        for (size_t i = 0; i + 1 < draw.modifyPosUints.size(); i += 2) {
+            report << "vertex_override " << draw.modifyPosUints[i] << ' ' << draw.modifyPosUints[i + 1] << '\n';
+        }
+    }
+
+    void capture_geometry(const RT64::Workload& workload) {
+        static char last_request[PROP_VALUE_MAX] = {};
+        char request[PROP_VALUE_MAX] = {};
+        if (__system_property_get("debug.podone.geometry", request) == 0 || std::strcmp(request, "0") == 0
+                || std::strcmp(last_request, request) == 0 || workload.drawData.faceIndices.empty()) return;
+        std::strcpy(last_request, request);
+
+        const char* storage = SDL_AndroidGetInternalStoragePath();
+        if (storage == nullptr) return;
+        const std::string report_path = std::string(storage) + "/pod-one-geometry.txt";
+        const std::string pending_path = report_path + ".tmp";
+        std::ofstream report(pending_path);
+        write_geometry(report, workload);
+        report.close();
+        if (report && std::rename(pending_path.c_str(), report_path.c_str()) == 0) {
+            __android_log_print(ANDROID_LOG_INFO, geometry_tag, "saved request=%s", request);
+        } else {
+            std::remove(pending_path.c_str());
+            __android_log_print(ANDROID_LOG_ERROR, geometry_tag, "capture failed request=%s", request);
+        }
+    }
 }
 
 bool podone_hud::race_clock_running() {
     const auto now = Clock::now();
-    return now - last_clock_advance.load() < 120ms && now - last_original_start.load() >= 250ms;
+    return now - last_clock_advance.load() < clock_update_window && now - last_original_start.load() >= 250ms;
 }
 
 void podone_hud::note_original_start() {
@@ -240,5 +348,6 @@ void capture_advance(RT64::WorkloadQueue* queue) {
     const auto& workload = queue->workloads[queue->writeCursor];
     observe_race_clock(workload);
     capture_hud(workload);
+    capture_geometry(workload);
     original_advance(queue);
 }

@@ -477,7 +477,7 @@ static uint32_t find_local_racer() {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeQueueRacePause(JNIEnv*, jclass) {
-    if (find_local_racer() == 0 || !podone_hud::race_clock_running()) return JNI_FALSE;
+    if (!podone_hud::race_clock_running()) return JNI_FALSE;
     g_pause_ready_vi.store(0);
     g_pause_reads.store(2);
     return JNI_TRUE;
