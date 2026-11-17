@@ -15,9 +15,10 @@ set(new_frame [=[
         const bool adjustPerspective = std::abs(scissorRatio * pixelAspect / p.aspectRatioSource - 1.0f) < SimilarityPercentage;
         const float perspectiveAspectScale = adjustPerspective ? (p.aspectRatioTarget / p.aspectRatioSource) : 1.0f;
         const bool traceHud = podone_hud::tracing(p.curWorkload->workloadId);
-        const bool raceHud = p.fbWidth == podone_hud::framebuffer_width && (wideWidth > originalWidth || traceHud)
-            && podone_hud::has_race_hud(fbPair);
-        const float hudOffset = raceHud ? podone_hud::edge_offset(p.resolutionScale.x, p.resolutionScale.y) : 0.0f;
+        const auto hudLayout = p.fbWidth == podone_hud::framebuffer_width && (wideWidth > originalWidth || traceHud)
+            ? podone_hud::race_layout(fbPair) : podone_hud::Layout::None;
+        const float hudOffset = hudLayout != podone_hud::Layout::None
+            ? podone_hud::edge_offset(p.resolutionScale.x, p.resolutionScale.y) : 0.0f;
         unsigned anchoredHudRects = 0;
 ]=])
 set(old_projection [=[            float projInvRatioScale = 1.0f / aspectRatioScale;]=])
@@ -42,9 +43,10 @@ set(old_rect [=[
 ]=])
 set(new_rect [=[
                             if (hudOffset > 0.0f && regularOrigins && !tileCopiesUsed && !coversScissorWidth) {
-                                hudAnchor = podone_hud::anchor(call.callDesc);
+                                hudAnchor = podone_hud::anchor(call.callDesc, hudLayout);
                                 if (hudAnchor != podone_hud::Anchor::None) {
-                                    invRatioScale = p.resolutionScale.y / p.resolutionScale.x;
+                                    invRatioScale = hudAnchor == podone_hud::Anchor::Stretch
+                                        ? 1.0f : float(p.resolutionScale.y / p.resolutionScale.x);
                                     ++anchoredHudRects;
                                 }
                             }
@@ -61,7 +63,7 @@ set(new_finish [=[
         if (traceHud) {
             podone_hud::trace_layout(p.curWorkload->workloadId, p.fbPairIndex, p.fbWidth, p.fbHeight,
                 p.resolutionScale.x, p.resolutionScale.y, p.aspectRatioSource, p.aspectRatioTarget,
-                raceHud, hudOffset, anchoredHudRects);
+                hudLayout, hudOffset, anchoredHudRects);
         }
         checkRasterScene(rasterScene);
 ]=])

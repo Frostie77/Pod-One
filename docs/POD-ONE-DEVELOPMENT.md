@@ -35,6 +35,7 @@
 - Aspect and resolution changes replace RT64 render targets after both GPU queues finish using them.
 - On Android, RT64 reserves framebuffer coverage for triangles crossing the camera plane and leaves their final clipping to the GPU. Race and menu visuals need verification on the Odin.
 - RT64 accounts for the shape of Racer's interlaced pixels in both 3D projection and raster clipping when widening the image.
+- The minimap and progress-ring HUDs use the widened picture. The progress ring and its position markers share a horizontal transform, and its lap, time and speed readouts retain their original scale.
 - RT64 skips frame matching when rendering a native frame. A workload without a match uploads its original transforms. Original refresh has reduced clipping in device testing.
 - The widescreen HUD moves the side panels, minimap and instruments together and extends the trim around the centred timer. The layout is based on the two alternating race workloads captured on the Odin.
 

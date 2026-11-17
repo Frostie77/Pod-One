@@ -224,11 +224,12 @@ bool podone_hud::tracing(uint64_t workload) {
 }
 
 void podone_hud::trace_layout(uint64_t workload, unsigned pair, unsigned width, unsigned height, float x_scale, float y_scale,
-                             float source_aspect, float target_aspect, bool race_hud, float offset, unsigned anchored) {
+                             float source_aspect, float target_aspect, Layout layout, float offset, unsigned anchored) {
+    const char* hud_mode = layout == Layout::ProgressRing ? "progress-ring" : layout == Layout::Minimap ? "minimap" : "none";
     __android_log_print(ANDROID_LOG_INFO, log_tag,
-        "layout workload=%llu pair=%u fb=%ux%u scale=%.3f,%.3f aspect=%.3f->%.3f race_hud=%u offset=%.0f anchored=%u",
+        "layout workload=%llu pair=%u fb=%ux%u scale=%.3f,%.3f aspect=%.3f->%.3f race_hud=%u offset=%.0f anchored=%u mode=%s",
         static_cast<unsigned long long>(workload), pair, width, height, x_scale, y_scale,
-        source_aspect, target_aspect, unsigned(race_hud), offset, anchored);
+        source_aspect, target_aspect, unsigned(layout != Layout::None), offset, anchored, hud_mode);
 }
 
 // The producer still owns this workload until advanceToNextWorkload publishes it.
