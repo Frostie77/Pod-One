@@ -19,6 +19,8 @@ namespace podone_hud {
     constexpr int framebuffer_width = 320;
     constexpr int left_margin = 8;
     constexpr int right_margin = framebuffer_width - left_margin;
+    constexpr int top_margin = 16;
+    constexpr int banner_top = 42;
 
     inline bool matches(const RT64::FixedRect& rect, int x, int y, int right, int bottom) {
         return rect.ulx == 4 * x && rect.uly == 4 * y && rect.lrx == 4 * right && rect.lry == 4 * bottom;
@@ -30,7 +32,7 @@ namespace podone_hud {
 
     inline bool hud_rectangle(const RT64::DrawCall& call) {
         return call.tileCount == 1 && !call.otherMode.zCmp() && !call.otherMode.zUpd()
-            && matches(call.scissorRect, left_margin, 16, right_margin, 464);
+            && matches(call.scissorRect, left_margin, top_margin, right_margin, 464);
     }
 
     inline bool timer_digit(const RT64::DrawCall& call) {
@@ -102,6 +104,12 @@ namespace podone_hud {
     inline float edge_offset(float wide_scale, float native_scale) {
         // Preserve the original padding inside Racer's eight-pixel overscan mask.
         return std::round((framebuffer_width / 2 - left_margin) * (wide_scale - native_scale));
+    }
+
+    inline float banner_offset(const RT64::DrawCall& call, Layout layout, float scale) {
+        if (layout != Layout::Minimap || !hud_rectangle(call)
+                || !inside(call.rect, 0, banner_top, 320, 118)) return 0.0f;
+        return -std::round((banner_top - top_margin) * scale);
     }
 
     inline void place(RenderViewport& viewport, Anchor anchor, float offset) {

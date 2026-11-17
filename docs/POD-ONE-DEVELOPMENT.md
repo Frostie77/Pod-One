@@ -32,11 +32,11 @@
 - MSAA Off/2x/4x; downsampling Off/2x/3x; output refresh Original/Display/Manual 60.
 - Android Window Mode is fullscreen only; the menu shows the actual supported mode instead of offering a nonworking windowed toggle.
 - **Needs on-device validation:** toggling MSAA and downsampling may require renderer reinitialization or be unsupported by a particular Vulkan driver.
-- Aspect and resolution changes replace RT64 render targets after both GPU queues finish using them.
+- Aspect and resolution changes drain the submitted RT64 render and presentation work before replacing render targets.
 - On Android, RT64 reserves framebuffer coverage for triangles crossing the camera plane and leaves their final clipping to the GPU. Race and menu visuals need verification on the Odin.
-- RT64 accounts for the shape of Racer's interlaced pixels in both 3D projection and raster clipping when widening the image.
-- The minimap and progress-ring HUDs use the widened picture. The progress ring and its position markers share a horizontal transform, and its lap, time and speed readouts retain their original scale.
-- RT64 skips frame matching when rendering a native frame. A workload without a match uploads its original transforms. Original refresh has reduced clipping in device testing.
+- RT64 accounts for the shape of Racer's interlaced pixels when widening the image. It preserves the RSP's combined view-projection matrix at the current frame, adjusting only its horizontal scale.
+- The minimap HUD pins the lap, time and position banner to the visible top edge. The progress ring and its position markers share a horizontal transform, and its lap, time and speed readouts retain their original scale.
+- RT64 skips frame matching at native refresh. Device testing still shows clipping across all refresh settings.
 - The widescreen HUD moves the side panels, minimap and instruments together and extends the trim around the centred timer. The layout is based on the two alternating race workloads captured on the Odin.
 
 ### Sound and input

@@ -316,21 +316,16 @@ public:
         app_->updateScreen();
     }
 
-    // RT64's asynchronous framebuffer discard can wait for presentation with
-    // its configuration mutex held. The present worker needs that same mutex.
-    // At a drained queue boundary we can release the targets synchronously.
-    bool reset_idle_render_targets() {
+    // The graphics thread is the producer for both queues. Drain the work
+    // already submitted before it publishes any frames at the new size.
+    void reset_render_targets() {
         auto &workloads = *app_->workloadQueue;
         auto &presents = *app_->presentQueue;
-        std::unique_lock workload_lock(workloads.threadMutex, std::defer_lock);
-        std::unique_lock present_lock(presents.threadMutex, std::defer_lock);
-        if (std::try_lock(workload_lock, present_lock) != -1) return false;
-
-        const std::scoped_lock queue_state(workloads.cursorMutex, presents.cursorMutex,
-                                          workloads.workloadIdMutex, presents.presentIdMutex);
-        if (workloads.threadCursor != workloads.writeCursor || presents.threadCursor != presents.writeCursor
-                || workloads.workloadId != app_->state->workloadId
-                || presents.presentId != app_->state->presentId) return false;
+        workloads.waitForWorkloadId(app_->state->workloadId);
+        presents.waitForPresentId(app_->state->presentId);
+        // The IDs are signalled after the first frame. The thread locks also
+        // cover any remaining interpolated frames using the old targets.
+        const std::scoped_lock queue_threads(workloads.threadMutex, presents.threadMutex);
 
         auto &resources = *app_->sharedQueueResources;
         const std::scoped_lock targets(resources.managerMutex, resources.interpolatedMutex);
@@ -341,7 +336,6 @@ public:
         // A VI update can present the last workload before another one is submitted.
         // Keep one base frame so PresentQueue advances its present ID even here.
         for (auto &counters : resources.interpolatedFrames) counters = {.count = 1};
-        return true;
     }
 
     void apply_pending_video_settings() {
@@ -351,10 +345,10 @@ public:
             const std::scoped_lock lock{g_video_request_mutex};
             request = g_video_request;
         }
-        if (!apply_video_settings(request)) g_video_dirty.store(true);
+        apply_video_settings(request);
     }
 
-    bool apply_video_settings(const VideoRequest &request) {
+    void apply_video_settings(const VideoRequest &request) {
         const auto &previous = app_->userConfig;
         auto cfg = previous;
         int aspect = request.aspect;
@@ -400,7 +394,7 @@ public:
                 || cfg.resolutionMultiplier != previous.resolutionMultiplier
                 || cfg.downsampleMultiplier != previous.downsampleMultiplier
                 || cfg.antialiasing != previous.antialiasing;
-        if (rebuild_targets && !reset_idle_render_targets()) return false;
+        if (rebuild_targets) reset_render_targets();
 
 #if defined(__ANDROID__)
         podone_set_fill_screen(aspect == 5);
@@ -409,7 +403,6 @@ public:
         app_->updateUserConfig(false);
         printf("[SWE1R] video: aspect %d filter %d scale %d msaa %d downsample %d refresh %d\n",
                aspect, filter, resolution, msaa, cfg.downsampleMultiplier, refresh);
-        return true;
     }
 
     void shutdown() override {

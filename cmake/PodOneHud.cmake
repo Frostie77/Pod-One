@@ -15,7 +15,9 @@ set(new_frame [=[
         const bool adjustPerspective = std::abs(scissorRatio * pixelAspect / p.aspectRatioSource - 1.0f) < SimilarityPercentage;
         const float perspectiveAspectScale = adjustPerspective ? (p.aspectRatioTarget / p.aspectRatioSource) : 1.0f;
         const bool traceHud = podone_hud::tracing(p.curWorkload->workloadId);
-        const auto hudLayout = p.fbWidth == podone_hud::framebuffer_width && (wideWidth > originalWidth || traceHud)
+        // RT64 supplies a 1:1 aspect for framebuffer readback. Apply HUD
+        // offsets in the presentation workload, including at the native ratio.
+        const auto hudLayout = p.fbWidth == podone_hud::framebuffer_width && p.aspectRatioSource > 1.0f
             ? podone_hud::race_layout(fbPair) : podone_hud::Layout::None;
         const float hudOffset = hudLayout != podone_hud::Layout::None
             ? podone_hud::edge_offset(p.resolutionScale.x, p.resolutionScale.y) : 0.0f;
@@ -52,6 +54,9 @@ set(new_rect [=[
                             }
                             RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
                             podone_hud::place(viewportRect, hudAnchor, hudOffset);
+                            if (regularOrigins && !tileCopiesUsed) {
+                                viewportRect.y += podone_hud::banner_offset(call.callDesc, hudLayout, p.resolutionScale.y);
+                            }
 ]=])
 set(old_scissor [=[                        triangles.scissor = convertFixedRect(call.callDesc.scissorRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);]=])
 set(new_scissor [=[
