@@ -20,19 +20,53 @@ endif()
 string(REPLACE "${old_perspective_solve}" "${new_perspective_solve}" rt64_math "${rt64_math}")
 podone_patch_rt64_source("${rt64_math_source}" "${rt64_math}")
 
+set(rt64_rigid_body_source "${RT64_DIR}/src/hle/rt64_rigid_body.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_rigid_body_source}")
+file(READ "${rt64_rigid_body_source}" rt64_rigid_body)
+set(old_velocity [=[
+            curVelMag /= dotCurVel;
+            lerpTranslation = (curVelMag < VelocityTolerance) || (curVelMag / std::max(prevVelMag, Epsilon)) < MagnitudeThreshold;
+]=])
+set(new_velocity [=[
+            // A small displacement is continuous even on the first moving
+            // frame or a direction reversal. Angle-weight only the jump test.
+            const float adjustedSpeed = curVelMag / dotCurVel;
+            lerpTranslation = (curVelMag < VelocityTolerance) || (adjustedSpeed / std::max(prevVelMag, Epsilon)) < MagnitudeThreshold;
+]=])
+string(FIND "${rt64_rigid_body}" "${old_velocity}" velocity_match)
+if(velocity_match EQUAL -1)
+    message(FATAL_ERROR "Pod One's RT64 motion interpolation patch needs to be updated")
+endif()
+string(REPLACE "${old_velocity}" "${new_velocity}" rt64_rigid_body "${rt64_rigid_body}")
+podone_patch_rt64_source("${rt64_rigid_body_source}" "${rt64_rigid_body}")
+
 set(rt64_transforms_source "${RT64_DIR}/src/render/rt64_transform_processor.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_transforms_source}")
 file(READ "${rt64_transforms_source}" rt64_transforms)
+set(old_model_include [=[#include "common/rt64_math.h"]=])
+set(new_model_include [=[#include "common/rt64_math.h"
+#include "podone_model_transform.h"]=])
+set(old_model_samples [=[
+                        prevMatrix = transformMap.rigidBody.lerp(p.prevFrameWeight, prevTransform, curTransform, true);
+                        curMatrix = transformMap.rigidBody.lerp(p.curFrameWeight, prevTransform, curTransform, true);
+]=])
+set(new_model_samples [=[
+                        const auto &group = drawData.transformGroups[drawData.worldTransformGroups[t]];
+                        prevMatrix = podone_model::sample(transformMap.rigidBody, prevTransform, curTransform, group, p.prevFrameWeight);
+                        curMatrix = podone_model::sample(transformMap.rigidBody, prevTransform, curTransform, group, p.curFrameWeight);
+]=])
 set(old_upload [=[            const bool prevFrameValid = (p.prevFrame != nullptr);]=])
 set(new_upload [=[
             // process() only builds interpolated matrices for a matched workload.
             const bool prevFrameValid = (p.prevFrame != nullptr) && p.curFrame->frameMap.workloads[w].mapped;
 ]=])
-string(FIND "${rt64_transforms}" "${old_upload}" upload_match)
-if(upload_match EQUAL -1)
-    message(FATAL_ERROR "Pod One's RT64 transform upload patch needs to be updated")
-endif()
-string(REPLACE "${old_upload}" "${new_upload}" rt64_transforms "${rt64_transforms}")
+foreach(section model_include model_samples upload)
+    string(FIND "${rt64_transforms}" "${old_${section}}" match_start)
+    if(match_start EQUAL -1)
+        message(FATAL_ERROR "Pod One's RT64 transform ${section} patch needs to be updated")
+    endif()
+    string(REPLACE "${old_${section}}" "${new_${section}}" rt64_transforms "${rt64_transforms}")
+endforeach()
 podone_patch_rt64_source("${rt64_transforms_source}" "${rt64_transforms}")
 
 set(rt64_workloads_source "${RT64_DIR}/src/hle/rt64_workload_queue.cpp")
@@ -161,7 +195,13 @@ set(new_test [=[
             }
 ]=])
 
-foreach(section candidates test)
+set(old_match_include [=[#include "rt64_game_frame.h"]=])
+set(new_match_include [=[#include "rt64_game_frame.h"
+#include "podone_model_transform.h"]=])
+set(old_model_pose [=[        curTransformMap.rigidBody.updateDecomposition(curTransform, curGroup.decompose);]=])
+set(new_model_pose [=[        podone_model::update_pose(curTransformMap.rigidBody, curTransform, curGroup);]=])
+
+foreach(section candidates test match_include model_pose)
     string(FIND "${rt64_match}" "${old_${section}}" match_start)
     if(match_start EQUAL -1)
         message(FATAL_ERROR "Pod One's RT64 geometry matching patch needs to be updated")
