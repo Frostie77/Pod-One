@@ -1,3 +1,25 @@
+set(rt64_math_source "${RT64_DIR}/src/common/rt64_math.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_math_source}")
+file(READ "${rt64_math_source}" rt64_math)
+set(old_perspective_solve [=[
+            hlslpp::float4x4 InversePerspectiveMatrix = inverse(PerspectiveMatrix);
+            hlslpp::float4x4 TransposedInversePerspectiveMatrix = transpose(InversePerspectiveMatrix);
+
+            perspective = hlslpp::mul(TransposedInversePerspectiveMatrix, RightHandSide);
+]=])
+set(new_perspective_solve [=[
+            // recomposeMatrix multiplies the affine transform by a matrix
+            // whose last column is perspective. Solve for that column in
+            // hlslpp's row-major layout.
+            perspective = hlslpp::mul(inverse(PerspectiveMatrix), RightHandSide);
+]=])
+string(FIND "${rt64_math}" "${old_perspective_solve}" perspective_match)
+if(perspective_match EQUAL -1)
+    message(FATAL_ERROR "Pod One's RT64 perspective interpolation patch needs to be updated")
+endif()
+string(REPLACE "${old_perspective_solve}" "${new_perspective_solve}" rt64_math "${rt64_math}")
+podone_patch_rt64_source("${rt64_math_source}" "${rt64_math}")
+
 set(rt64_transforms_source "${RT64_DIR}/src/render/rt64_transform_processor.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${rt64_transforms_source}")
 file(READ "${rt64_transforms_source}" rt64_transforms)
