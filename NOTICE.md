@@ -16,6 +16,7 @@ LucasArts, Disney or Nintendo.
 | `lib/rt64` | [RT64](https://github.com/rt64/rt64) by DarioSamo and contributors, through [AurelioB's Android fork](https://github.com/AurelioB/rt64); this port's patches on the `racer-android` branch of dguillot-gh/rt64 | MIT |
 | `lib/rt64/src/contrib/plume` | [plume](https://github.com/renderbag/plume) (RT64's graphics layer), through [AurelioB's fork](https://github.com/AurelioB/plume); this port's patch on the `racer-android` branch of dguillot-gh/plume | MIT |
 | `lib/SDL2` | [SDL](https://libsdl.org) | zlib |
+| `lib/adrenotools` (and its `lib/linkernsbypass` submodule) | [AdrenoTools](https://github.com/bylaws/libadrenotools) and [Linker Namespace Bypass](https://github.com/bylaws/liblinkernsbypass) by Billy Laws and contributors | BSD-2-Clause |
 
 Patterns followed, with no code copied unless noted: the per-task RSP reset in `send_dl` and the audio-microcode plan
 from [Goemon64Recomp-Android](https://github.com/ogdanimal/Goemon64Recomp-Android) (ogdanimal) and

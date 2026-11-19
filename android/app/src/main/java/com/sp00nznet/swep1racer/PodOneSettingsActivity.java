@@ -1,0 +1,262 @@
+package com.sp00nznet.swep1racer;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.FrameLayout;
+
+import io.github.frostfrontend.FrostButtonMapper;
+import io.github.frostfrontend.FrostFrontendView;
+import io.github.frostfrontend.FrostSpeakerTest;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+/** Launcher settings: same FrostFrontend settings before starting the native runtime. */
+public final class PodOneSettingsActivity extends Activity {
+    private SharedPreferences prefs;
+    private FrostFrontendView frontend;
+    private final FrostSpeakerTest speaker = new FrostSpeakerTest();
+    private boolean mapping;
+    private PodOneSaveManager saves;
+    private TouchPadView touchEditor;
+    private PodOneDrivers drivers;
+
+    private static final String[] FILTERS = {"Sharp", "Smooth"};
+    private static final String[] SCALES = {"1x", "2x", "3x", "Fit"};
+    private static final String[] MSAAS = {"Off", "2x", "4x"};
+    private static final String[] DOWNSAMPLES = {"Off", "2x", "3x"};
+    private static final String[] REFRESH = {"Original", "Display refresh", "Manual (60 Hz)"};
+    private static final String[] SIZES = {"Small", "Medium", "Large"};
+    private static final int[] OPACITIES = {100,75,50,30};
+    private final FrostButtonMapper mapper = PodOneControls.newMapper();
+
+    @Override protected void onCreate(Bundle savedState) {
+        super.onCreate(savedState);
+        PodOneLauncherView.enterFullscreen(this);
+        saves = new PodOneSaveManager(this);
+        prefs = getSharedPreferences(PodOneFrontend.PREFS, MODE_PRIVATE);
+        if (!prefs.getBoolean("podone_aspect_migrated", false)) {
+            SharedPreferences.Editor e = prefs.edit();
+            if (prefs.getInt(PodOneFrontend.ASPECT, 0) == 2) e.putInt(PodOneFrontend.ASPECT, 4);
+            e.putBoolean("podone_aspect_migrated", true).apply();
+        }
+        mapper.load(prefs, "podone_bind_");
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF0A1425);
+        frontend = new FrostFrontendView(this);
+        drivers = new PodOneDrivers(this, false, frontend::refresh);
+        root.addView(frontend, new FrameLayout.LayoutParams(-1,-1));
+        touchEditor = new TouchPadView(this);
+        touchEditor.setVisibility(View.GONE);
+        root.addView(touchEditor, new FrameLayout.LayoutParams(-1, -1));
+        frontend.setTabs(Arrays.asList(
+            new FrostFrontendView.Tab("graphics", "Graphics"),
+            new FrostFrontendView.Tab("sound", "Sound"),
+            new FrostFrontendView.Tab("controls", "Controls"),
+            new FrostFrontendView.Tab("touch", "Touch Settings"),
+            new FrostFrontendView.Tab("saves", "Save Management"),
+            new FrostFrontendView.Tab("updates", "Updates"),
+            new FrostFrontendView.Tab("diagnostics", "Diagnostics"),
+            new FrostFrontendView.Tab("about", "About")
+        ));
+        frontend.setUpdateInfo("Pod One (development)", "Not checked",
+                "Checks published GitHub releases, not ROM-derived APK downloads.");
+        frontend.setAdapter(new FrostFrontendView.Adapter() {
+            @Override public List<FrostFrontendView.Item> itemsForTab(String tab) {
+                return items(tab);
+            }
+            @Override public void onItemSelected(String tab, String id) { adjust(tab,id,1); }
+            @Override public boolean isItemAdjustable(String tab, String id) {
+                return PodOneFrontend.isAdjustable(tab, id);
+            }
+            @Override public void onItemAdjusted(String tab, String id, int direction) {
+                adjust(tab, id, direction);
+            }
+            @Override public void onVisibilityChanged(boolean visible) {
+                if (!visible) finish();
+            }
+        });
+        setContentView(root);
+        frontend.open();
+    }
+
+    private static FrostFrontendView.Item item(String id, String title, String val, String hint) {
+        return new FrostFrontendView.Item(id,title,val,hint);
+    }
+    private int ix(String key, int def, int count) {
+        return Math.max(0,Math.min(count-1,prefs.getInt(key,def)));
+    }
+    private int cy(String key,int def,int count,int d) {
+        return ((ix(key,def,count)+d)%count+count)%count;
+    }
+    private String onOff(String key, boolean d) { return prefs.getBoolean(key,d) ? "On" : "Off"; }
+
+    private List<FrostFrontendView.Item> items(String tab) {
+        switch (tab) {
+            case "graphics": return Arrays.asList(
+                item("resolution","Resolution Scale",SCALES[ix("resolution",3,4)],"Internal resolution or Fit"),
+                item("downsample","Downsampling",DOWNSAMPLES[ix("downsample",0,3)],"RT64 downsampling"),
+                item("aspect","Aspect Ratio",PodOneFrontend.ASPECT_NAMES[ix("aspect",0,PodOneFrontend.ASPECT_NAMES.length)],
+                     "Original, fixed ratio or Expand to Screen without stretching"),
+                item("window","Display Mode","Fullscreen","Immersive fullscreen Vulkan"),
+                item("refresh","Framerate / Refresh",REFRESH[ix("refresh",0,3)],
+                     "Display refresh mode; game speed unchanged"),
+                item("msaa","MSAA",MSAAS[ix("msaa",0,3)],"Anti-aliasing, experimental on Odin"),
+                item("filter","Texture Filtering",FILTERS[ix("filter",1,2)],"Sharp or smooth output"),
+                item("driver","Graphics Driver",drivers.selectedName(),
+                     "Import an Adreno driver ZIP or choose the system Vulkan driver"),
+                item("fps","Show FPS Counter",onOff("fps",false),"In-game FPS overlay")
+            );
+            case "sound": return Collections.singletonList(PodOneFrontend.audioBufferItem(prefs));
+            case "controls":
+                if (!mapping) return Arrays.asList(
+                    item("mapping","Physical Button Mapping","","Remap controller actions"),
+                    item("left_stick","Steering","Left analogue stick","Preserved"),
+                    item("right_stick","Camera","Right analogue stick","Preserved"),
+                    item("menu_key","Menu Shortcut","Start / Select","Start opens both pause menus. Select opens only Racer’s pause menu.")
+                );
+                return PodOneControls.mappingRows(mapper);
+            case "touch": return Arrays.asList(
+                item("pad","Show Touch Controls",onOff("pad",true),"Menu icon remains visible"),
+                item("boost","Touch BOOST",onOff("boost",true),""),
+                item("size","Control Size",SIZES[ix("size",1,3)],""),
+                item("opacity","Touch Opacity",OPACITIES[ix("opacity",0,4)]+"%",""),
+                item("layout","Edit Touch Layout","","Move and resize touch controls and the menu button")
+            );
+            case "saves": return Collections.singletonList(
+                item("manage_saves","Manage Racer Saves","","Export, restore or delete the Racer save"));
+            case "updates": return Collections.singletonList(
+                item("check","Check GitHub Releases","","No game assets are downloaded"));
+            case "diagnostics": return Arrays.asList(
+                item("share_log","Share Startup Log","","Share app-readable logs and device information"),
+                item("speaker","Stereo Speaker Test","","Play a tone on the left, right, then both speakers")
+            );
+            case "about": return Collections.singletonList(
+                item("credits","About Pod One","","Port credits and game copyright information"));
+            default: return Collections.emptyList();
+        }
+    }
+
+    private void adjust(String tab,String id,int d) {
+        if ("graphics".equals(tab) && "driver".equals(id)) {
+            drivers.show();
+            return;
+        }
+        if ("diagnostics".equals(tab) && "share_log".equals(id)) {
+            PodOneDiagnostics.shareStartupLog(this);
+            return;
+        }
+        if ("diagnostics".equals(tab) && "speaker".equals(id)) {
+            PodOneDiagnostics.playSpeakerTest(this, speaker);
+            return;
+        }
+        if ("about".equals(tab) && "credits".equals(id)) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("About Pod One")
+                .setMessage("Native Android port of Star Wars Episode I: Racer. Based on sp00nznet/racer and dguillot-gh/star-wars-racer-recomp. FrostFrontend by Frostie77. Game and artwork remain their owners' property.")
+                .setPositiveButton("OK",null).show();
+            return;
+        }
+        if ("sound".equals(tab)) {
+            if ("latency".equals(id)) PodOneFrontend.toggleAudioBuffer(prefs);
+            return;
+        }
+        if ("updates".equals(tab)) { if ("check".equals(id)) PodOneUpdates.check(this,frontend); return; }
+        if ("saves".equals(tab)) {
+            if ("manage_saves".equals(id)) saves.show();
+            return;
+        }
+        if ("controls".equals(tab)) {
+            if ("mapping".equals(id)) {
+                mapping=true;
+                frontend.enterButtonMapping(mapper,()->mapping=false);
+            } else if ("map_back".equals(id)) {
+                frontend.requestMappingBack();
+            } else if ("reset_mapping".equals(id)) {
+                mapper.resetDefaults(); mapper.save(prefs,"podone_bind_");
+            } else if (id.startsWith("map:")) {
+                String action=id.substring(4);
+                frontend.beginButtonCapture(action,new FrostFrontendView.ButtonCaptureListener() {
+                    @Override public void onCaptured(int key) {
+                        FrostButtonMapper.Change change=mapper.assign(action,key);
+                        mapper.save(prefs,"podone_bind_");
+                        if(change.unmappedAction!=null)
+                            frontend.showMappingNotice(change.unmappedAction+" was unassigned");
+                    }
+                    @Override public void onCancelled() {}
+                });
+            }
+            return;
+        }
+        if ("touch".equals(tab) && "layout".equals(id)) {
+            touchEditor.loadLayout(prefs);
+            touchEditor.setSizeScale(PodOneFrontend.SIZES[ix("size", 1, SIZES.length)]);
+            frontend.setVisibility(View.GONE);
+            touchEditor.setVisibility(View.VISIBLE);
+            touchEditor.startEditing(() -> {
+                touchEditor.setVisibility(View.GONE);
+                frontend.setVisibility(View.VISIBLE);
+                frontend.requestFocus();
+            });
+            return;
+        }
+        SharedPreferences.Editor e=prefs.edit();
+        switch(id) {
+            case "aspect": e.putInt("aspect",cy("aspect",0,6,d)); break;
+            case "resolution": e.putInt("resolution",cy("resolution",3,4,d)); break;
+            case "downsample": e.putInt("downsample",cy("downsample",0,3,d)); break;
+            case "filter": e.putInt("filter",cy("filter",1,2,d)); break;
+            case "msaa": e.putInt("msaa",cy("msaa",0,3,d)); break;
+            case "refresh": e.putInt("refresh",cy("refresh",0,3,d)); break;
+            case "fps": e.putBoolean("fps",!prefs.getBoolean("fps",false)); break;
+            case "pad": e.putBoolean("pad",!prefs.getBoolean("pad",true)); break;
+            case "boost": e.putBoolean("boost",!prefs.getBoolean("boost",true)); break;
+            case "size": e.putInt("size",cy("size",1,3,d)); break;
+            case "opacity": e.putInt("opacity",cy("opacity",0,4,d)); break;
+            default: return;
+        }
+        e.apply();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent e) {
+        e = PodOneControls.normalizeStart(e);
+        if (touchEditor != null && touchEditor.isEditing()) return touchEditor.handleEditorKey(e);
+        if (frontend != null && frontend.isOpen()) return frontend.handleKeyEvent(e);
+        return super.dispatchKeyEvent(e);
+    }
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent e) {
+        if (touchEditor != null && touchEditor.isEditing()) return true;
+        if (frontend != null && frontend.handleGenericMotionEvent(e)) return true;
+        return super.dispatchGenericMotionEvent(e);
+    }
+    @Override public void onBackPressed() {
+        if (touchEditor != null && touchEditor.isEditing()) touchEditor.finishEditing(false);
+        else if (frontend != null && frontend.isOpen()) frontend.back();
+        else finish();
+    }
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) PodOneLauncherView.enterFullscreen(this);
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (drivers.onActivityResult(request, result, data)) return;
+        if (result == RESULT_OK && data != null && data.getData() != null
+                && (request == PodOneSaveManager.EXPORT_SAVE || request == PodOneSaveManager.IMPORT_SAVE)) {
+            saves.transfer(request, data.getData());
+        }
+    }
+
+    @Override protected void onStop() {
+        speaker.stop();
+        super.onStop();
+    }
+}

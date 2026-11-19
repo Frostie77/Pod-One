@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <iterator>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <sys/system_properties.h>
+#include "podone_hud.h"
 #endif
 
 #include "recomp.h"
@@ -249,6 +251,15 @@ constexpr uint64_t SWE1R_ROM_HASH = 0x9B89D0F9EBC12D32ULL; // XXH3_64bits of bas
 // =============================================================================
 static SDL_Window* g_window = nullptr;
 static SDL_GameController* g_controller = nullptr;
+static std::atomic<bool> g_frontend_open{false};
+#if defined(__ANDROID__)
+static std::atomic<bool> g_original_start_pressed{false};
+static std::atomic<uint64_t> g_guest_vi_count{0};
+static std::atomic<uint64_t> g_pause_ready_vi{0};
+static std::atomic<int> g_pause_reads{0};
+#endif
+// Same order as PodOneControls.java: A, B, Z, R, L, C directions, D-pad directions.
+static std::atomic<int> g_gamepad_keys[] = {96, 97, 104, 103, 102, 100, 106, 99, 107, 19, 20, 21, 22};
 
 // =============================================================================
 // RSP Callbacks
@@ -304,6 +315,7 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
         fprintf(stderr, "Failed to initialize SDL2: %s\n", SDL_GetError());
         std::exit(1);
     }
+    SDL_GameControllerEventState(SDL_ENABLE);
 
     printf("[SWE1R] SDL initialized: %s\n", SDL_GetCurrentVideoDriver());
     return nullptr;
@@ -392,7 +404,6 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
 // =============================================================================
 
 void poll_input() {
-    SDL_GameControllerEventState(SDL_ENABLE);
     if (g_controller != nullptr && !SDL_GameControllerGetAttached(g_controller)) {
         SDL_GameControllerClose(g_controller);
         g_controller = nullptr;
@@ -423,25 +434,69 @@ Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetTouchPad(JNIEnv*, jclas
     g_touch_y.store((float)y);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetFrontendOpen(JNIEnv*, jclass, jboolean open) {
+    g_frontend_open.store(open == JNI_TRUE);
+    if (open == JNI_TRUE) {
+        g_pause_reads.store(0);
+        g_original_start_pressed.store(false);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetOriginalStartPressed(JNIEnv*, jclass, jboolean pressed) {
+    g_original_start_pressed.store(pressed == JNI_TRUE);
+    if (pressed == JNI_TRUE) podone_hud::note_original_start();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetGamepadKeys(JNIEnv* env, jclass, jintArray keys) {
+    constexpr jsize count = std::size(g_gamepad_keys);
+    if (keys == nullptr || env->GetArrayLength(keys) != count) return;
+    jint values[count];
+    env->GetIntArrayRegion(keys, 0, count, values);
+    for (jsize i = 0; i < count; ++i) g_gamepad_keys[i].store(values[i]);
+}
+
 // 2026-10-21 (Claude): the local player's boost state, for the pad's BOOST button (fires the moment it is ready).
 // Racer keeps a per-racer record array at 0x80118F90 (0x88 bytes each); record 0 is local player 1 when its tag at
 // +4 is 'Locl', and +0x84 points to the racer object ('Test', same layout as the PC version). In that object
 // +0x210 is the boost status: 0 not ready, 1 charging, 2 ready (written only by the boost-charge code, func_8006E454).
 // Returns -1 when there is no local racer (menus, attract demo) or a pointer looks wrong.
-extern "C" JNIEXPORT jint JNICALL
-Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeBoostState(JNIEnv*, jclass) {
+static uint32_t find_local_racer() {
     uint8_t* const rdram = g_rdram_base;
-    if (rdram == nullptr) return -1;
+    if (rdram == nullptr) return 0;
     auto read32 = [rdram](uint32_t addr) -> uint32_t {
         return *(volatile uint32_t*)(rdram + (addr - 0x80000000u));
     };
-    if (read32(0x80118F94) != 0x4C6F636Cu) return -1;            // 'Locl'
-    const uint32_t obj = read32(0x80119014);
-    if (obj < 0x80000400u || obj > 0x807FF000u || (obj & 3) != 0) return -1;
-    if (read32(obj) != 0x54657374u) return -1;                    // 'Test'
-    const uint32_t status = read32(obj + 0x210);
+    if (read32(0x80118F94) != 0x4C6F636Cu) return 0; // 'Locl'
+    const uint32_t object = read32(0x80119014);
+    if (object < 0x80000400u || object > 0x807FF000u || (object & 3) != 0) return 0;
+    return read32(object) == 0x54657374u ? object : 0; // 'Test'
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeQueueRacePause(JNIEnv*, jclass) {
+    if (!podone_hud::race_clock_running()) return JNI_FALSE;
+    g_pause_ready_vi.store(0);
+    g_pause_reads.store(2);
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeRacePauseReady(JNIEnv*, jclass) {
+    const uint64_t ready_vi = g_pause_ready_vi.load();
+    return ready_vi > 0 && g_guest_vi_count.load() >= ready_vi ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeBoostState(JNIEnv*, jclass) {
+    const uint32_t object = find_local_racer();
+    if (object == 0) return -1;
+    const uint32_t status = *(volatile uint32_t*)(g_rdram_base + (object - 0x80000000u) + 0x210);
     return (status <= 2) ? (jint)status : -1;
 }
+
 #endif
 
 bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
@@ -450,6 +505,8 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     *buttons = 0;
     *x = 0.0f;
     *y = 0.0f;
+    // SDL polls the controller independently of Android UI key dispatch.
+    if (g_frontend_open.load()) return true;
 
     // Keyboard (desktop testing)
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
@@ -472,33 +529,59 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (keys[SDL_SCANCODE_A]) *x -= 1.0f;
     if (keys[SDL_SCANCODE_D]) *x += 1.0f;
 
-    // Physical game controller
+    // Physical gamepad bindings supplied by FrostFrontend.
+    // The analogue left-stick and right-stick camera remain unchanged.
     if (g_controller != nullptr) {
         auto btn = [](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(g_controller, b) != 0; };
         auto axis = [](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(g_controller, a) / 32768.0f; };
-        if (btn(SDL_CONTROLLER_BUTTON_A)) *buttons |= 0x8000;
-        if (btn(SDL_CONTROLLER_BUTTON_B)) *buttons |= 0x4000;
-        if (btn(SDL_CONTROLLER_BUTTON_X)) *buttons |= 0x0002;           // C-Left
-        if (btn(SDL_CONTROLLER_BUTTON_Y)) *buttons |= 0x0008;           // C-Up
-        if (btn(SDL_CONTROLLER_BUTTON_BACK)) *buttons |= 0x2000;        // Z
+        auto pressed = [&](int android_key) -> bool {
+            switch (android_key) {
+                case 19: return btn(SDL_CONTROLLER_BUTTON_DPAD_UP);
+                case 20: return btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+                case 21: return btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+                case 22: return btn(SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+                case 96: return btn(SDL_CONTROLLER_BUTTON_A);
+                case 97: return btn(SDL_CONTROLLER_BUTTON_B);
+                case 99: return btn(SDL_CONTROLLER_BUTTON_X);
+                case 100: return btn(SDL_CONTROLLER_BUTTON_Y);
+                case 102: return btn(SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+                case 103: return btn(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+                case 104: return axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 0.30f;
+                case 105: return axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 0.30f;
+                case 106: return btn(SDL_CONTROLLER_BUTTON_LEFTSTICK);
+                case 107: return btn(SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+                default: return false;
+            }
+        };
+        static constexpr uint16_t action_bits[] = {
+            0x8000, 0x4000, 0x2000, 0x0010, 0x0020, 0x0008, 0x0004, 0x0002, 0x0001,
+            0x0800, 0x0400, 0x0200, 0x0100
+        };
+        static_assert(std::size(action_bits) == std::size(g_gamepad_keys));
+        for (size_t i = 0; i < std::size(action_bits); ++i) {
+            if (pressed(g_gamepad_keys[i].load())) *buttons |= action_bits[i];
+        }
+#if !defined(__ANDROID__)
         if (btn(SDL_CONTROLLER_BUTTON_START)) *buttons |= 0x1000;
-        if (btn(SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) *buttons |= 0x0020;  // L
-        if (btn(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) *buttons |= 0x0010; // R
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_UP)) *buttons |= 0x0800;
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) *buttons |= 0x0400;
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) *buttons |= 0x0200;
-        if (btn(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) *buttons |= 0x0100;
-        if (axis(SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 0.30f) *buttons |= 0x2000;  // Z
-        if (axis(SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 0.30f) *buttons |= 0x0010; // R
+#endif
         const float rx = axis(SDL_CONTROLLER_AXIS_RIGHTX);
         const float ry = axis(SDL_CONTROLLER_AXIS_RIGHTY);
-        if (ry < -0.5f) *buttons |= 0x0008; // C-Up
-        if (ry > 0.5f)  *buttons |= 0x0004; // C-Down
-        if (rx < -0.5f) *buttons |= 0x0002; // C-Left
-        if (rx > 0.5f)  *buttons |= 0x0001; // C-Right
+        if (ry < -0.5f) *buttons |= 0x0008;
+        if (ry > 0.5f)  *buttons |= 0x0004;
+        if (rx < -0.5f) *buttons |= 0x0002;
+        if (rx > 0.5f)  *buttons |= 0x0001;
         *x += axis(SDL_CONTROLLER_AXIS_LEFTX);
         *y -= axis(SDL_CONTROLLER_AXIS_LEFTY);
     }
+
+#if defined(__ANDROID__)
+    if (g_original_start_pressed.load()) *buttons |= 0x1000;
+    int remaining = g_pause_reads.load();
+    if (remaining > 0 && g_pause_reads.compare_exchange_strong(remaining, remaining - 1)) {
+        *buttons |= 0x1000;
+        if (remaining == 1) g_pause_ready_vi.store(g_guest_vi_count.load() + 1);
+    }
+#endif
 
     // On-screen touch pad (Android)
     *buttons |= (uint16_t)(g_touch_buttons.load() & 0xFFFF);
@@ -512,13 +595,9 @@ bool get_input(int controller_num, uint16_t* buttons, float* x, float* y) {
     *x = std::clamp(*x, -1.0f, 1.0f);
     *y = std::clamp(*y, -1.0f, 1.0f);
 
-    // 2026-10-21 (Claude): log every change of the pressed buttons the game reads (grep "[pad]"), to check that each
-    // on-screen / gamepad button reaches the game.
-    static uint16_t s_last_buttons = 0;
-    if (*buttons != s_last_buttons) {
-        printf("[pad] buttons 0x%04X (was 0x%04X)\n", *buttons, s_last_buttons);
-        s_last_buttons = *buttons;
-    }
+#if defined(__ANDROID__)
+    if (*buttons & 0x1000) podone_hud::note_original_start();
+#endif
     return true;
 }
 
@@ -539,7 +618,9 @@ ultramodern::input::connected_device_info_t get_connected_device_info(int contro
 // =============================================================================
 
 void vi_callback() {
-    // Called every VI interrupt
+#if defined(__ANDROID__)
+    g_guest_vi_count.fetch_add(1);
+#endif
 }
 
 void gfx_init_callback() {
@@ -943,6 +1024,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     const std::filesystem::path config_path = std::filesystem::path(internal_storage) / "swe1racer";
+    if (argc >= 3) {
+        extern void podone_configure_vulkan(const std::filesystem::path&, const char*, const char*);
+        podone_configure_vulkan(config_path / "drivers", argv[1], argv[2]);
+    }
 #if defined(__ANDROID__)
     __android_log_print(ANDROID_LOG_INFO, "SWE1Racer", "Using config path: %s", config_path.string().c_str());
 #endif

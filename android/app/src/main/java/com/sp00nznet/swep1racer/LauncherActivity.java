@@ -3,195 +3,156 @@ package com.sp00nznet.swep1racer;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.res.Configuration;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.Toast;
+
+import io.github.frostfrontend.FrostSpeakerTest;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import java.util.Locale;
 
-/**
- * The start screen (2026-10-21): bring in your own Racer ROM, then play. The ROM is
- * copied into the app's own storage (files/swe1racer/roms/selected.z64, the path src/main.cpp loads); the original is
- * only read. .v64 and .n64 dumps are converted to .z64 byte order while copying, then checked by SHA-1.
- */
+/** Select and verify a Racer ROM, then start the game in its own process. */
 public final class LauncherActivity extends Activity {
     private static final int PICK_ROM = 1;
-    // The dump the game was recompiled for (SHA-1 of the .z64): Star Wars Episode I: Racer (USA).
     private static final String KNOWN_SHA1 = "3542d5597c8a56ea8f5c63bceae97a24c4c08d58";
-
-    private TextView status;
-    private Button play;
+    private final FrostSpeakerTest speaker = new FrostSpeakerTest();
+    private PodOneLauncherView launcher;
+    private boolean importingRom;
 
     private File rom() { return new File(getFilesDir(), "swe1racer/roms/selected.z64"); }
 
-    private File save() { return new File(getFilesDir(), "swe1racer/saves/swe1racer.bin"); }
-
-    @Override
-    protected void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        final boolean landscape = getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
-        final LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER);
-        final int pad = dp(landscape ? 12 : 24);
-        box.setPadding(pad, pad, pad, pad);
-
-        final TextView title = new TextView(this);
-        title.setText("Star Wars Episode I: Racer");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, landscape ? 26 : 34);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setGravity(Gravity.CENTER);
-        box.addView(title);
-
-        final TextView sub = new TextView(this);
-        sub.setText("Nintendo 64 · native recomp");
-        sub.setTextColor(0xFF8AB4FF);
-        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, landscape ? 11 : 13);
-        sub.setGravity(Gravity.CENTER);
-        box.addView(sub);
-
-        status = new TextView(this);
-        status.setTextColor(0xFFB0B0B8);
-        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, landscape ? 11 : 14);
-        status.setGravity(Gravity.CENTER);
-        status.setPadding(0, dp(landscape ? 5 : 12), 0, dp(landscape ? 8 : 20));
-        box.addView(status);
-
-        play = button(box, "Play", () -> startActivity(new Intent(this, SWE1RacerActivity.class)));
-        button(box, "Choose your game ROM (.z64 / .v64 / .n64)", this::pickRom);
-
-        final TextView hint = new TextView(this);
-        hint.setText("Use your own dump of the game (USA). It is copied into the app; the file you pick is not "
-                + "changed. Your race progress is kept between sessions. In the game, Back asks before quitting.");
-        hint.setTextColor(0xFF707078);
-        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, landscape ? 10 : 12);
-        hint.setGravity(Gravity.CENTER);
-        hint.setPadding(0, dp(landscape ? 8 : 16), 0, 0);
-        box.addView(hint, new LinearLayout.LayoutParams(dp(landscape ? 680 : 420), ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        final ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.addView(box);
-        // The start-screen art (res/drawable/launcher_background.xml, an original drawing) fills the screen behind it.
-        final FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(0xFF101014);
-        final ImageView art = new ImageView(this);
-        art.setImageResource(R.drawable.launcher_background);
-        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        root.addView(art, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        root.addView(scroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        setContentView(root);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        PodOneLauncherView.enterFullscreen(this);
+        launcher = new PodOneLauncherView(this, new Runnable[] {
+            this::playOrPickRom,
+            () -> startActivity(new Intent(this, PodOneSettingsActivity.class)),
+            () -> PodOneUpdates.check(this),
+            this::showDiagnostics,
+            this::finish
+        }, this::pickRom);
+        setContentView(launcher);
+        launcher.focusFirstAction();
         refresh();
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
         refresh();
     }
 
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) PodOneLauncherView.enterFullscreen(this);
+    }
+
     private void refresh() {
-        final boolean haveRom = rom().isFile();
-        final StringBuilder s = new StringBuilder();
-        s.append(haveRom ? "Game ROM: ready" : "Choose your own Star Wars Episode I: Racer (USA) ROM to start.");
-        s.append('\n');
-        s.append(save().isFile() ? "Save: " + new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
-                .format(new Date(save().lastModified())) : "Save: none yet (the game makes one when you race)");
-        status.setText(s);
-        play.setEnabled(haveRom);
-        play.setAlpha(haveRom ? 1f : 0.5f);
+        launcher.setRomState(rom().isFile(), importingRom);
     }
 
-    private Button button(LinearLayout box, String text, Runnable action) {
-        final boolean landscape = getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
-        final Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        if (landscape) {
-            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            b.setMinHeight(dp(36));
-            b.setMinimumHeight(dp(36));
-            b.setPadding(dp(8), 0, dp(8), 0);
-        }
-        b.setOnClickListener(v -> action.run());
-        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(landscape ? 300 : 320),
-                landscape ? dp(36) : ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(landscape ? 3 : 8);
-        box.addView(b, lp);
-        return b;
+    private void playOrPickRom() {
+        if (importingRom) return;
+        if (rom().isFile()) startActivity(new Intent(this, SWE1RacerActivity.class));
+        else pickRom();
     }
-
-    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
 
     private void pickRom() {
-        final Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("*/*");
-        startActivityForResult(i, PICK_ROM);
+        if (importingRom) return;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, PICK_ROM);
     }
 
-    @Override
-    protected void onActivityResult(int request, int result, Intent data) {
+    @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
-        if (request != PICK_ROM || result != RESULT_OK || data == null || data.getData() == null) return;
-        final Uri uri = data.getData();
-        status.setText("Copying the ROM...");
-        // Large copy off the UI thread.
+        if (request != PICK_ROM || result != RESULT_OK || importingRom
+                || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        importingRom = true;
+        refresh();
         new Thread(() -> {
-            String message;
+            String error = null;
             try {
-                message = importRom(uri);
+                importRom(uri);
             } catch (IOException e) {
-                message = "That did not work: " + e.getMessage();
+                error = e.getMessage();
             }
-            final String m = message;
+            String failure = error;
             runOnUiThread(() -> {
+                importingRom = false;
+                if (isFinishing() || isDestroyed()) return;
                 refresh();
-                new AlertDialog.Builder(this).setMessage(m).setPositiveButton("OK", null).show();
+                launcher.focusFirstAction();
+                if (failure != null) {
+                    new AlertDialog.Builder(this).setTitle("ROM selection")
+                            .setMessage(failure).setPositiveButton("OK", null).show();
+                }
             });
-        }).start();
+        }, "PodOne-RomImport").start();
     }
 
-    private String importRom(Uri uri) throws IOException {
-        final File dest = rom(), tmp = new File(dest.getPath() + ".tmp");
-        //noinspection ResultOfMethodCallIgnored
-        dest.getParentFile().mkdirs();
-        final String sha1 = copyAsZ64(uri, tmp);
-        if (sha1 == null) {
-            //noinspection ResultOfMethodCallIgnored
-            tmp.delete();
-            return "That file is not a Nintendo 64 ROM (.z64, .v64 or .n64).";
+    private void importRom(Uri uri) throws IOException {
+        File destination = rom();
+        File directory = destination.getParentFile();
+        if (!directory.isDirectory() && !directory.mkdirs() && !directory.isDirectory())
+            throw new IOException("Cannot create the ROM folder.");
+        File temporary = File.createTempFile("racer-rom-", ".tmp", directory);
+        try {
+            String sha1 = copyAsZ64(uri, temporary);
+            if (sha1 == null) throw new IOException("Select an N64 ROM in .z64, .v64 or .n64 format.");
+            if (!KNOWN_SHA1.equals(sha1))
+                throw new IOException("Select a supported Star Wars Episode I: Racer (USA) ROM.\nSHA-1: " + sha1);
+            Files.move(temporary.toPath(), destination.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            temporary.delete();
         }
-        if (!KNOWN_SHA1.equals(sha1)) {
-            //noinspection ResultOfMethodCallIgnored
-            tmp.delete();
-            return "That ROM is not the supported Star Wars Episode I: Racer (USA) dump.\nSHA-1: " + sha1;
+    }
+
+    private void showDiagnostics() {
+        new AlertDialog.Builder(this)
+                .setTitle("Pod One Diagnostics")
+                .setItems(new String[]{"Share Startup Log", "Stereo Speaker Test"}, (dialog, option) -> {
+                    if (option == 0) PodOneDiagnostics.shareStartupLog(this);
+                    else PodOneDiagnostics.playSpeakerTest(this, speaker);
+                })
+                .setNegativeButton("Close", null).show();
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        event = PodOneControls.normalizeStart(event);
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_BUTTON_START || code == KeyEvent.KEYCODE_BUTTON_B
+                || PodOneControls.isControllerBack(event)) return true;
+        if (code == KeyEvent.KEYCODE_BUTTON_A || code == KeyEvent.KEYCODE_BUTTON_Y) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (code == KeyEvent.KEYCODE_BUTTON_Y) pickRom();
+                else {
+                    View focused = getCurrentFocus();
+                    if (focused != null && focused.isClickable()) focused.performClick();
+                }
+            }
+            return true;
         }
-        if (dest.exists() && !dest.delete()) throw new IOException("cannot replace the old ROM");
-        if (!tmp.renameTo(dest)) throw new IOException("cannot store the ROM");
-        return "Game ROM ready. Press Play.";
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override protected void onStop() {
+        speaker.stop();
+        super.onStop();
     }
 
     /**

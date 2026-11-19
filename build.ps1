@@ -62,6 +62,10 @@ if (-not (Test-Path -LiteralPath 'lib\N64ModernRuntime\N64Recomp\CMakeLists.txt'
     -not (Test-Path -LiteralPath 'lib\rt64\CMakeLists.txt') -or -not (Test-Path -LiteralPath 'lib\SDL2\CMakeLists.txt')) {
     Fail "the libraries in lib\ are missing. Run: git submodule update --init --recursive"
 }
+if (-not (Test-Path -LiteralPath 'lib\adrenotools\lib\linkernsbypass\CMakeLists.txt')) {
+    & git submodule update --init --recursive -- lib/adrenotools
+    if ($LASTEXITCODE -ne 0) { Fail 'Could not initialize the pinned Android driver loader.' }
+}
 Ok 'libraries in lib\'
 
 $python = Get-Command python -ErrorAction SilentlyContinue
@@ -188,6 +192,20 @@ $gradleLog = Join-Path $PSScriptRoot 'build\gradle.log'
 $started = Get-Date
 $ErrorActionPreference = 'Continue'
 & $java '-Xmx64m' '-classpath' $wrapper 'org.gradle.wrapper.GradleWrapperMain' '-p' 'android' ':app:assembleDebug' '--console=plain' *> $gradleLog
+# RT64's generated SPIR-V headers can occasionally race the C++ compile on Windows.
+# If (and only if) that exact error occurs, complete the shader target before retrying once.
+if ($LASTEXITCODE -ne 0 -and (Select-String -LiteralPath $gradleLog -Pattern '\.hlsl\.spirv\.h.*file not found' -Quiet)) {
+    Write-Host '   RT64 shader headers incomplete; generating shader target and retrying...' -ForegroundColor Yellow
+    $ninja = Join-Path $sdkCmake 'ninja.exe'
+    $buildNinja = Get-ChildItem 'android\app\.cxx' -Recurse -Filter 'build.ninja' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($buildNinja -and (Test-Path -LiteralPath $ninja)) {
+        & $ninja '-C' $buildNinja.DirectoryName 'rt64_generated_shader_outputs'
+        if ($LASTEXITCODE -eq 0) {
+            & $java '-Xmx64m' '-classpath' $wrapper 'org.gradle.wrapper.GradleWrapperMain' '-p' 'android' ':app:assembleDebug' '--console=plain' *> $gradleLog
+        }
+    }
+}
 if ($LASTEXITCODE -ne 0) {
     Select-String -LiteralPath $gradleLog -Pattern 'error|What went wrong|FAILED' | Select-Object -First 20 |
         ForEach-Object { Write-Host "   $($_.Line)" }
@@ -212,7 +230,7 @@ if ($devices.Count -eq 0) {
 }
 $out = & adb install -r $apk 2>&1 | Out-String
 if ($out -match 'Success') {
-    Ok 'installed. Open "Star Wars Episode I: Racer", tap "Choose your game ROM", pick your ROM, then Play.'
+    Ok 'installed. Open "Pod One". On a fresh install, use ROM Selection, then Play Game.'
 } elseif ($out -match 'INSTALL_FAILED_UPDATE_INCOMPATIBLE') {
     Fail 'the phone has a copy of the app signed by another PC. Uninstall it first (this deletes its saves), then run again.'
 } else {

@@ -1,3 +1,22 @@
+# Pod One — Android Racer Port (development branch)
+
+**Pod One** is the Frostie77-maintained Android fork of *Star Wars Episode I: Racer*.
+The original game's runtime is preserved; this branch adds a six-section **FrostFrontend**,
+controller-friendly launcher, persistent physical button remapping, five aspect ratios
+(4:3, 16:9, 16:10, 3:2, 21:9), experimental RT64 graphics settings,
+locally managed save backups and GitHub release checks.
+
+**Status:** implementation branch, **not yet built or validated on an Odin 2 Portal**.
+The working upstream-based build remains available on the `develop` branch.
+The game ROM and its recompiled code must never be committed or distributed.
+
+For current test scope, known limitations and private artwork installation, see
+[docs/POD-ONE-DEVELOPMENT.md](docs/POD-ONE-DEVELOPMENT.md).
+
+---
+
+## Original project documentation and credits
+
 # Star Wars Racer Recomp
 
 A native Android port of **Star Wars Episode I: Racer** (Nintendo 64), made by *static recompilation*: the game's own

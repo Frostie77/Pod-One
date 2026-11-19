@@ -12,3 +12,6 @@
 [submodule "android/FrostFrontend"]
 	path = android/FrostFrontend
 	url = https://github.com/Frostie77/FrostFrontend.git
+[submodule "lib/adrenotools"]
+	path = lib/adrenotools
+	url = https://github.com/bylaws/libadrenotools.git

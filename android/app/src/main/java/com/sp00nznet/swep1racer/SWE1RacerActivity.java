@@ -9,9 +9,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -25,7 +27,7 @@ import java.util.Locale;
 /**
  * The game. Started from LauncherActivity (the start screen picks and checks the ROM), in its own process ":game"
  * (AndroidManifest.xml): SDL cannot start twice in one process, so leaving the game ends that process and the
- * launcher is back for the next Play. The pad's ≡ button opens RacerMenu; its settings are applied again here at
+ * launcher is back for the next Play. The pad's ≡ button opens FrostFrontend; its settings are applied again here at
  * every start.
  */
 public final class SWE1RacerActivity extends SDLActivity {
@@ -33,7 +35,14 @@ public final class SWE1RacerActivity extends SDLActivity {
 
     // Implemented in src/main.cpp and src/rt64_render_context.cpp.
     static native void nativeSetTouchPad(int buttons, float x, float y);
-    static native void nativeSetVideo(int aspect, int filter, int resolution);
+    static native void nativeSetVideo(int aspect, int filter, int resolution,
+                                      int msaa, int downsample, int refresh);
+    static native void nativeSetFrontendOpen(boolean open);
+    static native void nativeSetGamepadKeys(int[] androidKeycodes);
+    static native void nativeSetOriginalStartPressed(boolean pressed);
+    static native boolean nativeQueueRacePause();
+    static native boolean nativeRacePauseReady();
+    static native void nativeSetAudioBuffer(int frames);
     static native float nativeGameFps();
     static native float nativeDisplayListRate();
     static native int nativeBoostState();      // 0 not ready, 1 charging, 2 ready, -1 no local racer
@@ -41,8 +50,20 @@ public final class SWE1RacerActivity extends SDLActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
     private TouchPadView pad;
-    private RacerMenu menu;
+    private PodOneFrontend menu;
     private TextView fpsView;
+    private long pauseMenuDeadline;
+    private final Runnable openAfterPause = new Runnable() {
+        @Override public void run() {
+            if (pauseMenuDeadline == 0 || isFinishing() || menu == null) return;
+            if (!nativeRacePauseReady() && SystemClock.uptimeMillis() < pauseMenuDeadline) {
+                handler.postDelayed(this, 16);
+                return;
+            }
+            pauseMenuDeadline = 0;
+            menu.open();
+        }
+    };
     private final Runnable fpsTick = new Runnable() {
         @Override
         public void run() {
@@ -53,6 +74,15 @@ public final class SWE1RacerActivity extends SDLActivity {
             }
         }
     };
+
+    @Override protected String[] getArguments() {
+        return new String[] {getApplicationInfo().nativeLibraryDir, getCacheDir().getAbsolutePath()};
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (menu != null) menu.drivers().onActivityResult(request, result, data);
+    }
 
     @Override
     protected String[] getLibraries() {
@@ -69,23 +99,32 @@ public final class SWE1RacerActivity extends SDLActivity {
             return;
         }
         super.onCreate(savedInstanceState);
-        prefs = getSharedPreferences(RacerMenu.PREFS, MODE_PRIVATE);
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        prefs = getSharedPreferences(PodOneFrontend.PREFS, MODE_PRIVATE);
         if (mLayout != null) {
+            mLayout.setDefaultFocusHighlightEnabled(false);
             pad = new TouchPadView(this);
             mLayout.addView(pad, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            menu = new RacerMenu(this, pad, prefs);
-            pad.setOnMenu(menu::open);
+            menu = new PodOneFrontend(this, pad, prefs);
+            pad.setOnMenu(this::openFrontend);
             pad.loadLayout(prefs);
-            pad.setPadVisible(prefs.getBoolean(RacerMenu.PAD, true));
-            pad.setBoostEnabled(prefs.getBoolean(RacerMenu.BOOST, true));
-            pad.setOpacity(RacerMenu.OPACITIES[clamp(prefs.getInt(RacerMenu.OPACITY, RacerMenu.DEF_OPACITY),
-                    RacerMenu.OPACITIES.length)] / 100f);
-            pad.setSizeScale(RacerMenu.SIZES[clamp(prefs.getInt(RacerMenu.SIZE, RacerMenu.DEF_SIZE),
-                    RacerMenu.SIZES.length)]);
-            setFpsShown(prefs.getBoolean(RacerMenu.FPS, false));
+            pad.setPadVisible(prefs.getBoolean(PodOneFrontend.PAD, true));
+            pad.setBoostEnabled(prefs.getBoolean(PodOneFrontend.BOOST, true));
+            pad.setOpacity(PodOneFrontend.OPACITIES[clamp(prefs.getInt(PodOneFrontend.OPACITY, PodOneFrontend.DEF_OPACITY),
+                    PodOneFrontend.OPACITIES.length)] / 100f);
+            pad.setSizeScale(PodOneFrontend.SIZES[clamp(prefs.getInt(PodOneFrontend.SIZE, PodOneFrontend.DEF_SIZE),
+                    PodOneFrontend.SIZES.length)]);
+            setFpsShown(prefs.getBoolean(PodOneFrontend.FPS, false));
+            mLayout.addView(menu.view(), new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
         applyVideo();
+        applyAudio();
+    }
+
+    void applyAudio() {
+        nativeSetAudioBuffer(PodOneFrontend.audioBufferFrames(prefs));
     }
 
     private static int clamp(int v, int count) { return Math.max(0, Math.min(count - 1, v)); }
@@ -93,15 +132,18 @@ public final class SWE1RacerActivity extends SDLActivity {
     /** The menu's picture settings to RT64 (applied on its thread at the next frame). */
     void applyVideo() {
         try {
-            nativeSetVideo(prefs.getInt(RacerMenu.ASPECT, RacerMenu.DEF_ASPECT),
-                    prefs.getInt(RacerMenu.FILTER, RacerMenu.DEF_FILTER),
-                    prefs.getInt(RacerMenu.RESOLUTION, RacerMenu.DEF_RESOLUTION));
+            nativeSetVideo(prefs.getInt(PodOneFrontend.ASPECT, PodOneFrontend.DEF_ASPECT),
+                    prefs.getInt(PodOneFrontend.FILTER, PodOneFrontend.DEF_FILTER),
+                    prefs.getInt(PodOneFrontend.RESOLUTION, PodOneFrontend.DEF_RESOLUTION),
+                    prefs.getInt(PodOneFrontend.MSAA, 0),
+                    prefs.getInt(PodOneFrontend.DOWNSAMPLE, 0),
+                    prefs.getInt(PodOneFrontend.REFRESH, 0));
         } catch (UnsatisfiedLinkError ignored) {
             // native library not loaded (no ROM path)
         }
     }
 
-    /** The FPS counter: a small label in the top-left corner, updated twice a second. */
+    /** Updates the FPS label twice a second. */
     void setFpsShown(boolean on) {
         if (on && fpsView == null && mLayout != null) {
             fpsView = new TextView(this);
@@ -112,8 +154,8 @@ public final class SWE1RacerActivity extends SDLActivity {
             final int p = Math.round(6 * getResources().getDisplayMetrics().density);
             fpsView.setPadding(p, p / 2, p, p / 2);
             final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START);
-            lp.setMargins(p * 2, p * 2, 0, 0);
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+            lp.setMargins(0, p * 2, p * 2, 0);
             mLayout.addView(fpsView, lp);
             handler.post(fpsTick);
         } else if (!on && fpsView != null) {
@@ -127,7 +169,13 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus && menu != null) {
+            nativeSetOriginalStartPressed(false);
+            pauseMenuDeadline = 0;
+            handler.removeCallbacks(openAfterPause);
+        }
         if (hasFocus) {
+            if (menu != null) menu.reapplyMappings();
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -135,27 +183,65 @@ public final class SWE1RacerActivity extends SDLActivity {
         }
     }
 
-    // SDL takes the Back key in its own key handling before onBackPressed runs, so catch it here first.
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            if (event.getAction() == KeyEvent.ACTION_UP) {
-                onBackPressed();
+    private void openFrontend() {
+        if (menu == null || menu.isOpen() || pauseMenuDeadline != 0) return;
+        if (nativeQueueRacePause()) {
+            pauseMenuDeadline = SystemClock.uptimeMillis() + 600;
+            handler.postDelayed(openAfterPause, 16);
+        } else {
+            menu.open();
+        }
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        event = PodOneControls.normalizeStart(event);
+        final int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_BUTTON_START && event.getAction() == KeyEvent.ACTION_UP && menu != null)
+            nativeSetOriginalStartPressed(false);
+        if (pad != null && pad.isEditing()) return pad.handleEditorKey(event);
+        if (menu != null && PodOneControls.isControllerBack(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (menu.isOpen()) menu.back();
+                else openFrontend();
             }
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_BUTTON_START && menu != null) {
+            if (menu.isOpen() && menu.view().isCapturingButton()) return menu.handleKeyEvent(event);
+            if (!menu.isOpen() && pauseMenuDeadline == 0 && event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) nativeSetOriginalStartPressed(true);
+            return true;
+        }
+        if (menu != null && menu.isOpen()) return menu.handleKeyEvent(event);
+        if (code == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_UP) onBackPressed();
             return true;
         }
         return super.dispatchKeyEvent(event);
     }
 
-    @Override
-    public void onBackPressed() {
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (pad != null && pad.isEditing()) return true;
+        if (menu != null && menu.isOpen() && menu.handleGenericMotionEvent(event)) return true;
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override public void onBackPressed() {
         if (pad != null && pad.isEditing()) {
-            pad.stopEditing();  // Back ends moving / resizing controls (the layout is saved)
+            pad.finishEditing(false);
         } else if (menu != null && menu.isOpen()) {
-            menu.close();       // Back closes the menu first
+            menu.back();
         } else {
             askQuit();
         }
+    }
+
+    void showSaveManagerInfo() {
+        new AlertDialog.Builder(this)
+                .setTitle("Save Management")
+                .setMessage("Quit the game, then open Settings → Save Management from the launcher to export, restore or delete a save.")
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     void askQuit() {
@@ -169,6 +255,11 @@ public final class SWE1RacerActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacks(fpsTick);
+        handler.removeCallbacks(openAfterPause);
+        if (menu != null) {
+            menu.destroy();
+            nativeSetFrontendOpen(false);
+        }
         super.onDestroy();
         // SDL and the recompiled game cannot be restarted in this process; end it so the next Play starts clean.
         // Not inside onDestroy itself: Android has not recorded the finish yet, sees the process die and starts the
