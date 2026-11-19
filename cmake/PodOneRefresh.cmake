@@ -76,6 +76,12 @@ set(old_capture_include [=[#include "rt64_workload_queue.h"]=])
 set(new_capture_include [=[
 #include "rt64_workload_queue.h"
 #include "podone_geometry.h"
+#include "podone_visibility.h"
+]=])
+set(old_visibility_aspect [=[        workloadConfig.aspectRatioScale = workloadConfig.aspectRatioTarget / workloadConfig.aspectRatioSource;]=])
+set(new_visibility_aspect [=[
+        workloadConfig.aspectRatioScale = workloadConfig.aspectRatioTarget / workloadConfig.aspectRatioSource;
+        podone_set_visibility_aspect(workloadConfig.aspectRatioScale);
 ]=])
 set(old_capture_setup [=[
             // Record all framebuffer pairs.
@@ -148,7 +154,7 @@ set(new_ticks [=[
                 }
 ]=])
 
-foreach(section projection transforms vertices match ticks capture_include capture_setup capture_depth capture_finish)
+foreach(section projection transforms vertices match ticks capture_include visibility_aspect capture_setup capture_depth capture_finish)
     string(FIND "${rt64_workloads}" "${old_${section}}" match_start)
     if(match_start EQUAL -1)
         message(FATAL_ERROR "Pod One's RT64 frame matching patch needs to be updated")

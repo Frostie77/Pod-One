@@ -122,3 +122,61 @@ stubs = [
     "libultra_split_80093CD0",
     "libultra_split_80093D50",
 ]
+
+# The perspective builder loads far from viewport + 0x144 at 0x80086064.
+# Scale the loaded value once per build, before calculating the depth terms.
+[[patches.hook]]
+func = "func_80085FB0"
+before_vram = 0x80086068
+text = "ctx->f6.fl *= PODONE_CAMERA_RANGE_SCALE;"
+
+# The model bounding-box test uses the guest projection, while RT64 can
+# render a wider view. Scale its local clip-space X and Y coefficients,
+# including translation. Z, W and the matrix used to draw stay untouched.
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036A1C
+text = "const float podone_box_x = podone_cull_x_scale();"
+
+# Each hook runs immediately after a matrix coefficient is loaded from t5.
+# X column, offsets 0x00, 0x10, 0x20, 0x30.
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036A9C
+text = "ctx->f2.fl *= podone_box_x;"
+
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036AA0
+text = "ctx->f12.fl *= podone_box_x;"
+
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036AA4
+text = "ctx->f14.fl *= podone_box_x;"
+
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036CD0
+text = "ctx->f10.fl *= podone_box_x;"
+
+# Y column, offsets 0x04, 0x14, 0x24, 0x34.
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036AAC
+text = "ctx->f16.fl *= PODONE_CULL_AXIS_SCALE;"
+
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036AB0
+text = "ctx->f18.fl *= PODONE_CULL_AXIS_SCALE;"
+
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036B3C
+text = "ctx->f4.fl *= PODONE_CULL_AXIS_SCALE;"
+
+[[patches.hook]]
+func = "func_80036A1C"
+before_vram = 0x80036DB4
+text = "ctx->f6.fl *= PODONE_CULL_AXIS_SCALE;"

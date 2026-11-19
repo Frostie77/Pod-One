@@ -7,6 +7,8 @@
 
 #include <SDL.h>
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -14,6 +16,7 @@
 #include <string>
 #if defined(__ANDROID__)
 #include <sys/system_properties.h>
+#include "podone_visibility.h"
 void podone_set_fill_screen(bool);
 bool podone_vulkan_fallback();
 #endif
@@ -57,6 +60,18 @@ static std::atomic<float> g_dl_rate{0.0f};
 
 #if defined(__ANDROID__)
 #include <jni.h>
+
+static std::atomic<float> g_cull_x_scale{PODONE_CULL_AXIS_SCALE};
+
+extern "C" void podone_set_visibility_aspect(float target_over_source) {
+    const float width = std::isfinite(target_over_source) ? std::max(1.0f, target_over_source) : 1.0f;
+    g_cull_x_scale.store(PODONE_CULL_AXIS_SCALE / width, std::memory_order_relaxed);
+}
+
+extern "C" float podone_cull_x_scale(void) {
+    return g_cull_x_scale.load(std::memory_order_relaxed);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_sp00nznet_swep1racer_SWE1RacerActivity_nativeSetVideo(JNIEnv*, jclass, jint aspect, jint filter, jint resolution, jint msaa, jint downsample, jint refresh) {
     const std::scoped_lock lock{g_video_request_mutex};

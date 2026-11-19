@@ -1,6 +1,7 @@
 #pragma once
 
 #include "recomp.h"
+#include "podone_visibility.h"
 
 // Implemented by the game host because the N64 routine uses PIF/COP0 behavior
 // that cannot be expressed by the current recompiler output.
